@@ -1,5 +1,5 @@
 const db = require('../database/db');
-const { processTournamentElo } = require('./elo');
+const { processTournamentElo, getLevelEmoji } = require('./elo');
 const { checkAchievements } = require('./achievements');
 const { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed } = require('./embeds');
 
@@ -215,4 +215,132 @@ async function rotateCampeonRole(guild, modalidad, newWinnerId) {
   } catch (e) { /* rol no configurado */ }
 }
 
-module.exports = { closeTournamentWithElo };
+/**
+ * Re-calcula ELO para traders que se vincularon DESPUÉS de que el torneo fue cerrado.
+ * Solo procesa snapshots sin resultado previo (no duplica).
+ * @param {number} torneoId
+ * @returns {{ procesados, skipped, enriched }}
+ */
+async function recalcMissingElo(torneoId) {
+  const torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(torneoId);
+  if (!torneo) throw new Error(`Torneo ${torneoId} no encontrado`);
+
+  // Paso 1: Re-enriquecer snapshots cuyo discord_id es NULL pero el correo ya está vinculado
+  const nullSnaps = db.prepare(
+    'SELECT * FROM leaderboard_snapshots WHERE tournament_id = ? AND discord_id IS NULL AND correo IS NOT NULL'
+  ).all(torneoId);
+
+  const updateSnapLink = db.prepare(
+    'UPDATE leaderboard_snapshots SET discord_id = ?, username = ?, level_emoji = ? WHERE id = ?'
+  );
+
+  let enriched = 0;
+  db.transaction(() => {
+    for (const snap of nullSnaps) {
+      const link = db.prepare('SELECT * FROM email_links WHERE correo = ?').get(snap.correo);
+      if (!link) continue;
+      const player = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(link.discord_id);
+      if (!player) continue;
+      updateSnapLink.run(
+        link.discord_id,
+        player.display_name || player.username,
+        getLevelEmoji(player.level),
+        snap.id
+      );
+      enriched++;
+    }
+  })();
+
+  // Paso 2: Todos los snapshots ahora vinculados
+  const linkedSnaps = db.prepare(`
+    SELECT * FROM leaderboard_snapshots
+    WHERE tournament_id = ? AND discord_id IS NOT NULL
+    ORDER BY current_rank ASC
+  `).all(torneoId);
+
+  // Paso 3: Filtrar los que NO tienen resultado previo para este torneo
+  const toProcess = linkedSnaps.filter(snap =>
+    !db.prepare('SELECT id FROM results WHERE tournament_id = ? AND discord_id = ?')
+      .get(torneoId, snap.discord_id)
+  );
+
+  const skipped = linkedSnaps.length - toProcess.length;
+  if (!toProcess.length) return { procesados: 0, skipped, enriched };
+
+  // Paso 4: Construir contexto de todos los vinculados para percentil correcto
+  const playersMap = {};
+  for (const snap of linkedSnaps) {
+    if (!playersMap[snap.discord_id]) {
+      const p = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(snap.discord_id);
+      if (p) playersMap[snap.discord_id] = p;
+    }
+  }
+  const allLinkedPlayers = linkedSnaps
+    .filter(s => playersMap[s.discord_id])
+    .map(s => playersMap[s.discord_id]);
+  const totalPlayers = allLinkedPlayers.length;
+
+  let procesados = 0;
+
+  db.transaction(() => {
+    for (const snap of toProcess) {
+      const player = playersMap[snap.discord_id];
+      if (!player) continue;
+
+      const eloResult = processTournamentElo(player, allLinkedPlayers, snap.current_rank, totalPlayers, snap.current_pnl_pct);
+      const newAchievements = checkAchievements(player, snap.current_pnl_pct, eloResult.top10_count_nuevo);
+
+      let eloBonus = 0;
+      for (const logro of newAchievements) {
+        eloBonus += logro.elo;
+        db.prepare('INSERT INTO achievements (discord_id, logro_id, elo_ganado, tournament_id) VALUES (?, ?, ?, ?)')
+          .run(player.discord_id, logro.id, logro.elo, torneoId);
+      }
+
+      const finalEloAfter = Math.max(0, eloResult.elo_after + eloBonus);
+      const isBestFinish = !player.best_finish || snap.current_rank < player.best_finish;
+
+      db.prepare(`
+        UPDATE players SET
+          elo = ?,
+          level = ?,
+          racha_actual = ?,
+          top10_count = ?,
+          ever_top10 = ?,
+          last_active_date = datetime('now'),
+          last_top10_date = CASE WHEN ? = 1 THEN datetime('now') ELSE last_top10_date END,
+          tournaments_played = tournaments_played + 1,
+          tournaments_won = tournaments_won + CASE WHEN ? = 1 THEN 1 ELSE 0 END,
+          best_finish = CASE WHEN ? THEN ? ELSE best_finish END,
+          total_pnl_sum = total_pnl_sum + ?
+        WHERE discord_id = ?
+      `).run(
+        finalEloAfter, eloResult.level_after, eloResult.racha_despues,
+        eloResult.top10_count_nuevo, eloResult.ever_top10_nuevo ? 1 : 0,
+        snap.current_rank <= 10 ? 1 : 0,
+        snap.current_rank === 1 ? 1 : 0,
+        isBestFinish ? 1 : 0, snap.current_rank,
+        snap.current_pnl_pct,
+        player.discord_id,
+      );
+
+      db.prepare(`
+        INSERT INTO results
+          (tournament_id, discord_id, correo, rank_final, equidad_final, pnl_pct, en_negativo,
+           elo_before, elo_after, elo_change, racha_antes, racha_despues)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        torneoId, player.discord_id, snap.correo,
+        snap.current_rank, snap.current_equidad, snap.current_pnl_pct, snap.current_pnl_pct < 0 ? 1 : 0,
+        eloResult.elo_before, finalEloAfter, finalEloAfter - eloResult.elo_before,
+        eloResult.racha_antes, eloResult.racha_despues,
+      );
+
+      procesados++;
+    }
+  })();
+
+  return { procesados, skipped, enriched };
+}
+
+module.exports = { closeTournamentWithElo, recalcMissingElo };

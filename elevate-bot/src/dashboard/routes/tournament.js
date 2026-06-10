@@ -4,7 +4,7 @@ const db = require('../../database/db');
 const { generateLeaderboardText, formatLastUpdated } = require('../../utils/leaderboard');
 const { parseCsv, normalizeRows } = require('../../utils/csv');
 const { getLevelEmoji } = require('../../utils/elo');
-const { closeTournamentWithElo } = require('../../utils/tournament-close');
+const { closeTournamentWithElo, recalcMissingElo } = require('../../utils/tournament-close');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -198,6 +198,42 @@ router.post('/upload-and-close', upload.single('file'), async (req, res) => {
       message: `Torneo procesado. ELO calculado para ${result.procesados} traders.`,
       ...result,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tournament/recalc-all — recalcula ELO en orden cronológico para todos los torneos sin resultados
+router.post('/recalc-all', async (req, res) => {
+  const torneos = db.prepare(`
+    SELECT t.id, t.name, t.edition
+    FROM tournaments t
+    WHERE (SELECT COUNT(*) FROM results WHERE tournament_id = t.id) = 0
+      AND (SELECT COUNT(*) FROM leaderboard_snapshots WHERE tournament_id = t.id) > 0
+    ORDER BY t.id ASC
+  `).all();
+
+  if (!torneos.length) return res.json({ message: 'No hay torneos pendientes de recalcular', torneos: [] });
+
+  const resultados = [];
+  for (const t of torneos) {
+    try {
+      const r = await recalcMissingElo(t.id);
+      resultados.push({ id: t.id, torneo: `${t.name} #${t.edition}`, ...r });
+    } catch (err) {
+      resultados.push({ id: t.id, torneo: `${t.name} #${t.edition}`, error: err.message });
+    }
+  }
+
+  const totalProcesados = resultados.reduce((s, r) => s + (r.procesados || 0), 0);
+  res.json({ message: `${resultados.length} torneos procesados, ${totalProcesados} traders con ELO calculado`, torneos: resultados });
+});
+
+// POST /api/tournament/:id/recalc-elo — recalcula ELO para un torneo específico
+router.post('/:id/recalc-elo', async (req, res) => {
+  try {
+    const result = await recalcMissingElo(Number(req.params.id));
+    res.json({ message: `ELO recalculado: ${result.procesados} traders procesados, ${result.skipped} ya tenían resultado`, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

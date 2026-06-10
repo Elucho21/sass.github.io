@@ -32,6 +32,36 @@ router.get('/search', (req, res) => {
   res.json(players);
 });
 
+// POST /api/player/link — vincula un correo a un Discord ID sin necesitar CSV
+router.post('/link', (req, res) => {
+  const { correo, discord_id, username } = req.body;
+  if (!correo || !discord_id) return res.status(400).json({ error: 'Faltan correo y/o discord_id' });
+
+  const correoNorm = correo.toLowerCase().trim();
+
+  // Crear player si no existe
+  const existing = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(discord_id);
+  const wasNew = !existing;
+  if (wasNew) {
+    const displayName = username?.trim() || discord_id;
+    db.prepare('INSERT OR IGNORE INTO players (discord_id, username, display_name) VALUES (?, ?, ?)').run(discord_id, displayName, displayName);
+  }
+
+  // Vincular correo
+  db.prepare("INSERT OR REPLACE INTO email_links (correo, discord_id, linked_by) VALUES (?, ?, 'admin')").run(correoNorm, discord_id);
+
+  // Actualizar snapshots existentes donde el correo aparece con discord_id NULL
+  const player = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(discord_id);
+  const { getLevelEmoji } = require('../../utils/elo');
+  db.prepare(`
+    UPDATE leaderboard_snapshots
+    SET discord_id = ?, username = ?, level_emoji = ?
+    WHERE correo = ? AND discord_id IS NULL
+  `).run(discord_id, player.display_name || player.username, getLevelEmoji(player.level), correoNorm);
+
+  res.json({ ok: true, correo: correoNorm, discord_id, wasNew });
+});
+
 // GET /api/unlinked/:tid
 router.get('/unlinked/:tid', (req, res) => {
   const config = db.prepare("SELECT value FROM server_config WHERE key = 'last_csv_unlinked'").get();

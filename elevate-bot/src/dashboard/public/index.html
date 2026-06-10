@@ -177,12 +177,28 @@
       <button onclick="procesarHistorico()" id="btn-historico">▶ Procesar torneo histórico</button>
       <span id="historico-msg" style="font-size:13px"></span>
     </div>
+    <!-- Vincular trader individual -->
+    <div style="margin-top:18px;padding:14px;background:var(--card-inner,rgba(255,255,255,0.04));border-radius:8px">
+      <h3 style="margin:0 0 10px">🔗 Vincular trader individual</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:180px"><label style="font-size:11px;color:var(--muted)">Correo</label><input type="text" id="link-correo" placeholder="trader@ejemplo.com" style="width:100%"/></div>
+        <div style="flex:1;min-width:180px"><label style="font-size:11px;color:var(--muted)">Discord ID</label><input type="text" id="link-discordid" placeholder="269671925234532353" style="width:100%"/></div>
+        <div style="flex:0"><label style="font-size:11px;color:var(--muted)">Username (opcional)</label><input type="text" id="link-username" placeholder="ElCheto21" style="width:140px"/></div>
+        <button onclick="vincularIndividual()" style="align-self:flex-end">Vincular</button>
+      </div>
+      <div id="link-msg" style="margin-top:6px;font-size:12px"></div>
+    </div>
+
     <!-- Lista de todos los torneos -->
     <div style="margin-top:18px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
         <h3 style="margin:0">Historial de torneos</h3>
-        <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="loadTournamentList()">↻ Actualizar</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button id="btn-recalc-all" onclick="recalcAll()" style="background:#7C3AED;padding:4px 12px;font-size:12px;border:none;border-radius:4px;color:#fff;cursor:pointer">🔄 Recalcular todos</button>
+          <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="loadTournamentList()">↻ Actualizar</button>
+        </div>
       </div>
+      <div id="recalc-all-msg" style="font-size:12px;margin-bottom:6px"></div>
       <div id="tournament-list"><p style="color:var(--muted);font-size:13px">Cargando...</p></div>
     </div>
   </div>
@@ -495,9 +511,50 @@
         <td>${statusMap[t.status]||t.status}</td>
         <td>${t.snapshot_count}</td>
         <td>${t.results_count > 0 ? `<span class="tag-ok">✅ ${t.results_count}</span>` : '<span class="tag-warn">—</span>'}</td>
-        <td>${t.status !== 'active' ? `<button onclick="deleteTorneo(${t.id},'${t.name} #${t.edition}')" style="background:var(--danger);padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🗑</button>` : ''}</td>
+        <td style="white-space:nowrap;display:flex;gap:4px">
+          ${t.results_count === 0 && t.snapshot_count > 0 ? `<button onclick="recalcTorneo(${t.id},'${t.name} #${t.edition}')" title="Recalcular ELO" style="background:#7C3AED;padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🔄</button>` : ''}
+          ${t.status !== 'active' ? `<button onclick="deleteTorneo(${t.id},'${t.name} #${t.edition}')" title="Eliminar" style="background:var(--danger);padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🗑</button>` : ''}
+        </td>
       </tr>`).join('')}</tbody>
     </table>`;
+  }
+
+  async function vincularIndividual() {
+    const correo = document.getElementById('link-correo').value.trim();
+    const discord_id = document.getElementById('link-discordid').value.trim();
+    const username = document.getElementById('link-username').value.trim();
+    const msg = document.getElementById('link-msg');
+    if (!correo || !discord_id) { msg.innerHTML = '<span class="tag-err">❌ Correo y Discord ID son requeridos</span>'; return; }
+    const res = await api('POST', '/player/link', { correo, discord_id, username });
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    msg.innerHTML = `<span class="tag-ok">✅ ${res.correo} vinculado a ${res.discord_id}${res.wasNew ? ' (jugador nuevo creado)' : ''}</span>`;
+    document.getElementById('link-correo').value = '';
+    document.getElementById('link-discordid').value = '';
+    document.getElementById('link-username').value = '';
+  }
+
+  async function recalcTorneo(id, nombre) {
+    if (!confirm(`Recalcular ELO para "${nombre}"?\n\nSolo procesa traders sin resultado previo.`)) return;
+    const res = await api('POST', `/tournament/${id}/recalc-elo`);
+    if (res.error) { alert('Error: ' + res.error); return; }
+    alert(`✅ ${nombre}\nProcesados: ${res.procesados} | Ya tenían resultado: ${res.skipped} | Enriquecidos: ${res.enriched}`);
+    loadTournamentList();
+  }
+
+  async function recalcAll() {
+    const btn = document.getElementById('btn-recalc-all');
+    const msg = document.getElementById('recalc-all-msg');
+    if (!confirm('Recalcular ELO en todos los torneos sin resultados (en orden cronológico)?\n\nEsto puede tardar algunos segundos.')) return;
+    btn.disabled = true; btn.textContent = '⏳ Recalculando...';
+    msg.innerHTML = '';
+    const res = await api('POST', '/tournament/recalc-all');
+    btn.disabled = false; btn.textContent = '🔄 Recalcular todos';
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    const lineas = (res.torneos || []).map(t =>
+      t.error ? `❌ ${t.torneo}: ${t.error}` : `✅ ${t.torneo}: ${t.procesados} traders`
+    ).join(' | ');
+    msg.innerHTML = `<span class="tag-ok">${res.message}</span>${lineas ? ` — ${lineas}` : ''}`;
+    loadTournamentList();
   }
 
   async function deleteTorneo(id, nombre) {
