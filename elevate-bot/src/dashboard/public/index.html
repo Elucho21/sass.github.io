@@ -386,13 +386,19 @@
   }
 
   async function activarTorneo() {
-    if (!confirm('¿Activar el torneo abierto? Esto publicará la tabla en el canal configurado.')) return;
-    alert('Usá el comando /activar en Discord para activar el torneo (requiere acceso al bot).');
+    if (!confirm('¿Activar el torneo abierto? Se publicará la tabla en el canal de Discord configurado.')) return;
+    const res = await api('POST', '/tournament/activate');
+    if (res.error) { alert('❌ ' + res.error); return; }
+    alert('✅ ' + res.message + (res.pinnedMessage ? '\nTabla publicada y pinneada en Discord.' : '\n⚠️ No se pudo publicar la tabla (verificá CHANNEL_TABLA en el .env).'));
+    loadTorneo();
   }
 
   async function cerrarTorneo() {
-    if (!confirm('¿Cerrar el torneo activo? ESTA ACCIÓN NO CALCULA ELO. Usá /cerrar-torneo en Discord.')) return;
-    alert('Usá el comando /cerrar-torneo en Discord para calcular ELO y cerrar el torneo correctamente.');
+    if (!confirm('¿Cerrar el torneo activo?\n\n⚠️ ATENCIÓN: Esto solo cambia el estado. Para calcular ELO usá /cerrar-torneo en Discord.')) return;
+    const res = await api('POST', '/tournament/close');
+    if (res.error) { alert('❌ ' + res.error); return; }
+    alert('✅ Torneo cerrado (solo estado).\nRecordá usar /cerrar-torneo en Discord para calcular ELO.');
+    loadTorneo();
   }
 
   // Init

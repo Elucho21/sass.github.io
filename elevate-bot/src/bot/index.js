@@ -41,4 +41,9 @@ for (const file of fs.readdirSync(eventsDir).filter(f => f.endsWith('.js'))) {
   }
 }
 
+client.once('ready', () => {
+  const startDashboard = require('../dashboard/server');
+  startDashboard(client);
+});
+
 client.login(process.env.DISCORD_TOKEN);
