@@ -7,16 +7,26 @@ const { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed } = requ
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('cerrar-torneo')
-    .setDescription('[Admin] Cerrá el torneo activo y calculá ELO final'),
+    .setDescription('[Admin] Cerrá un torneo y calculá ELO final')
+    .addIntegerOption(o =>
+      o.setName('torneo_id').setDescription('ID del torneo (solo para torneos históricos; omitir para el torneo activo)').setRequired(false)
+    ),
 
   async execute(interaction) {
     if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
       return interaction.reply({ content: '❌ No tenés permisos de administrador.', ephemeral: true });
     }
 
-    const torneo = db.prepare("SELECT * FROM tournaments WHERE status = 'active' ORDER BY id DESC LIMIT 1").get();
+    const torneoId = interaction.options.getInteger('torneo_id');
+    const torneo = torneoId
+      ? db.prepare("SELECT * FROM tournaments WHERE id = ? AND status != 'closed'").get(torneoId)
+      : db.prepare("SELECT * FROM tournaments WHERE status IN ('active','open') ORDER BY id DESC LIMIT 1").get();
+
     if (!torneo) {
-      return interaction.reply({ content: '❌ No hay torneo activo.', ephemeral: true });
+      return interaction.reply({
+        content: torneoId ? `❌ No se encontró el torneo con ID ${torneoId} (o ya está cerrado).` : '❌ No hay torneo activo.',
+        ephemeral: true,
+      });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -214,7 +224,7 @@ function assignLevelRole(guild, discordId, level) {
 
 async function rotateCampeonRole(guild, modalidad, newWinnerId) {
   const roleEnvMap = {
-    Light: process.env.ROLE_CAMPEON_LIGHT,
+    Night: process.env.ROLE_CAMPEON_NIGHT,
     Day:   process.env.ROLE_CAMPEON_DAY,
     Month: process.env.ROLE_CAMPEON_MONTH,
   };

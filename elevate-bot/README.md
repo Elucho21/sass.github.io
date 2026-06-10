@@ -34,7 +34,7 @@ Copiá `.env.example` a `.env` y completá los valores:
 | `CHANNEL_ASCENSOS_LOGROS` | ID del canal de ascensos y logros |
 | `CHANNEL_BOT_LOGS` | ID del canal de logs del bot (opcional) |
 | `ROLE_ROOKIE` … `ROLE_LEGEND` | IDs de los roles de nivel |
-| `ROLE_CAMPEON_LIGHT/DAY/MONTH` | IDs de los roles de campeón por modalidad |
+| `ROLE_CAMPEON_NIGHT/DAY/MONTH` | IDs de los roles de campeón por modalidad |
 | `ROLE_LOGRO_TOP1` … `ROLE_LOGRO_PNL30` | IDs de los roles de logro individuales |
 | `DASHBOARD_PORT` | Puerto del dashboard web (default: 3000) |
 | `DASHBOARD_TOKEN` | Token secreto para acceder al dashboard |
@@ -109,7 +109,7 @@ trader2@example.com,otro_usuario
 
 ## Flujo completo de un torneo
 
-1. **Admin** crea el torneo: `/nueva-ronda nombre:"Elevate" edicion:1 modalidad:Light`
+1. **Admin** crea el torneo: `/nueva-ronda nombre:"Elevate Night" edicion:20 modalidad:Night`
 2. **Admin** configura canales (una sola vez): `/set-canal-tabla #tabla` y `/set-canal-ascensos #ascensos`
 3. **Admin** activa el torneo: `/activar` — publica la tabla vacía y la pinnea
 4. **Traders** vinculan su correo: `/vincular trader@ejemplo.com`

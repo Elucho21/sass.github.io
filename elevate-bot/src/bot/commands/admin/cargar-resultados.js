@@ -8,9 +8,12 @@ const { generateLeaderboardText, formatLastUpdated } = require('../../../utils/l
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('cargar-resultados')
-    .setDescription('[Admin] Cargá resultados CSV del torneo activo')
+    .setDescription('[Admin] Cargá resultados CSV del torneo activo o de un torneo histórico')
     .addAttachmentOption(o =>
       o.setName('archivo').setDescription('CSV formato Elevate (Equity/Correo/Alias) o formato propio (correo/equidad_actual/rank)').setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName('torneo_id').setDescription('ID del torneo (solo para torneos históricos; omitir para el torneo activo)').setRequired(false)
     ),
 
   async execute(interaction) {
@@ -20,9 +23,16 @@ module.exports = {
 
     await interaction.deferReply({ ephemeral: true });
 
-    const torneo = db.prepare("SELECT * FROM tournaments WHERE status = 'active' ORDER BY id DESC LIMIT 1").get();
+    const torneoId = interaction.options.getInteger('torneo_id');
+    const torneo = torneoId
+      ? db.prepare('SELECT * FROM tournaments WHERE id = ?').get(torneoId)
+      : db.prepare("SELECT * FROM tournaments WHERE status IN ('active','open') ORDER BY id DESC LIMIT 1").get();
+
     if (!torneo) {
-      return interaction.editReply('❌ No hay torneo activo. Activá uno con `/activar` primero.');
+      return interaction.editReply(torneoId
+        ? `❌ No se encontró el torneo con ID ${torneoId}.`
+        : '❌ No hay torneo activo. Activá uno con `/activar` primero.'
+      );
     }
 
     const attachment = interaction.options.getAttachment('archivo');
