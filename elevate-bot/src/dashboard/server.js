@@ -13,6 +13,12 @@ function startDashboard(discordClient) {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
 
+  // Ping sin auth — solo para saber si el bot está conectado
+  app.get('/api/ping', (req, res) => {
+    const client = app.locals.discordClient;
+    res.json({ ok: true, botReady: !!(client?.isReady()) });
+  });
+
   app.use('/api', requireAuth);
 
   app.use('/api', require('./routes/upload'));

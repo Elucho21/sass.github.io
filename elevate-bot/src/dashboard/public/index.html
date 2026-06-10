@@ -508,7 +508,27 @@
     loadTorneo();
   }
 
+  async function checkBotStatus() {
+    try {
+      const data = await fetch('/api/ping').then(r => r.json());
+      const dot = document.getElementById('status-dot');
+      const txt = document.getElementById('status-text');
+      if (data.botReady) {
+        dot.className = 'status-dot online';
+        txt.textContent = 'Conectado';
+      } else {
+        dot.className = 'status-dot offline';
+        txt.textContent = 'Bot desconectado';
+      }
+    } catch {
+      document.getElementById('status-dot').className = 'status-dot offline';
+      document.getElementById('status-text').textContent = 'Sin conexión';
+    }
+  }
+
   // Init
+  checkBotStatus();
+  setInterval(checkBotStatus, 15000);
   loadTorneo();
   loadTournamentList();
 </script>
