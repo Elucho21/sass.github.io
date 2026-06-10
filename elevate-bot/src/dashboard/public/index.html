@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elevate Bot — Panel de Control</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0F0F0F; --surface: #1A1A1A; --border: #2A2A2A;
+      --accent: #7C3AED; --accent2: #9B59B6; --text: #E5E5E5;
+      --muted: #888; --success: #22C55E; --danger: #EF4444; --warning: #EAB308;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 16px 32px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .status-dot.online { background: var(--success); }
+    .status-dot.offline { background: var(--danger); }
+
+    main { max-width: 1200px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px;
+    }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; color: var(--accent); }
+    .card h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+    .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+    .stat .value { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .stat .label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .badge.open    { background: #1e3a5f; color: #60a5fa; }
+    .badge.active  { background: #14532d; color: #4ade80; }
+    .badge.closed  { background: #3f1f1f; color: #f87171; }
+
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: 8px; padding: 28px;
+      text-align: center; cursor: pointer; transition: border-color .2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); }
+    .drop-zone p { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+    input[type="text"], input[type="number"], input[type="email"], select {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); padding: 8px 10px; font-size: 13px; width: 100%;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+    button {
+      background: var(--accent); color: #fff; border: none; border-radius: 6px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .2s;
+    }
+    button:hover { opacity: .85; }
+    button.secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+    button.danger { background: var(--danger); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; }
+    td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(124,58,237,.05); }
+
+    .tag-ok   { color: var(--success); }
+    .tag-warn { color: var(--warning); }
+    .tag-err  { color: var(--danger); }
+
+    .modal-bg {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal-bg.visible { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; width: 420px; max-width: 95vw; }
+    .modal h3 { margin-bottom: 16px; }
+    .form-row { margin-bottom: 12px; }
+    .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+    #search-results .player-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-top: 12px; }
+    .chart-wrap { position: relative; height: 180px; margin-top: 12px; }
+    .preview-table { max-height: 240px; overflow-y: auto; }
+    .preview-table table { font-size: 12px; }
+
+    @media (max-width: 700px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Elevate Bot — Panel de Control</h1>
+  <span id="bot-status"><span class="status-dot offline" id="status-dot"></span><span id="status-text">Desconectado</span></span>
+</header>
+
+<main>
+  <!-- Torneo activo -->
+  <div class="card" id="card-torneo">
+    <h2>Torneo Activo</h2>
+    <div id="torneo-info"><p style="color:var(--muted)">Cargando...</p></div>
+  </div>
+
+  <!-- Acciones rápidas -->
+  <div class="card">
+    <h2>Acciones rápidas</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="openModal('modal-nuevo')">+ Nuevo Torneo</button>
+      <button class="secondary" onclick="activarTorneo()">▶ Activar Torneo</button>
+      <button class="danger" onclick="cerrarTorneo()">✕ Cerrar Torneo</button>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Carga de resultados -->
+    <div class="card">
+      <h2>Cargar Resultados CSV</h2>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:12px">Columnas: <code>correo, equidad_actual, rank</code></p>
+      <div class="drop-zone" id="drop-results" ondrop="handleDrop(event,'results')" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" onclick="document.getElementById('file-results').click()">
+        <div style="font-size:28px">📁</div>
+        <p>Arrastrá o hacé clic para seleccionar el CSV</p>
+      </div>
+      <input type="file" id="file-results" accept=".csv" style="display:none" onchange="previewCsv(event,'results')" />
+      <div id="preview-results" class="preview-table" style="display:none;margin-top:12px"></div>
+      <div style="margin-top:10px;display:none" id="btn-upload-results">
+        <button onclick="uploadResults()">✅ Confirmar carga</button>
+      </div>
+      <div id="results-msg" style="margin-top:8px;font-size:13px"></div>
+    </div>
+
+    <!-- Carga de vinculación -->
+    <div class="card">
+      <h2>Vinculación Masiva CSV</h2>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:12px">Columnas: <code>correo, discord_username</code></p>
+      <div class="drop-zone" id="drop-links" ondrop="handleDrop(event,'links')" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" onclick="document.getElementById('file-links').click()">
+        <div style="font-size:28px">🔗</div>
+        <p>Arrastrá o hacé clic para seleccionar el CSV</p>
+      </div>
+      <input type="file" id="file-links" accept=".csv" style="display:none" onchange="uploadLinks(event)" />
+      <div id="links-msg" style="margin-top:8px;font-size:13px"></div>
+    </div>
+  </div>
+
+  <!-- Sin vincular -->
+  <div class="card">
+    <h2>❓ Correos sin vincular</h2>
+    <div id="unlinked-list"><p style="color:var(--muted)">—</p></div>
+    <button class="secondary" style="margin-top:10px" onclick="loadUnlinked()">Actualizar lista</button>
+  </div>
+
+  <!-- Leaderboard preview -->
+  <div class="card">
+    <h2>Leaderboard actual</h2>
+    <div id="leaderboard-wrap"><p style="color:var(--muted)">Cargando...</p></div>
+  </div>
+
+  <!-- Búsqueda de jugador -->
+  <div class="card">
+    <h2>Buscar jugador</h2>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="search-input" placeholder="Username o correo..." />
+      <button onclick="searchPlayer()">Buscar</button>
+    </div>
+    <div id="search-results"></div>
+  </div>
+</main>
+
+<!-- Modal nuevo torneo -->
+<div class="modal-bg" id="modal-nuevo" onclick="closeModal(event,'modal-nuevo')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Nuevo Torneo</h3>
+    <div class="form-row"><label>Nombre</label><input type="text" id="nt-nombre" placeholder="Elevate Torneo" /></div>
+    <div class="form-row"><label>Edición</label><input type="number" id="nt-edicion" min="1" value="1" /></div>
+    <div class="form-row">
+      <label>Modalidad</label>
+      <select id="nt-modalidad">
+        <option>Light</option><option>Day</option><option>Month</option>
+      </select>
+    </div>
+    <div class="form-row"><label>Capital inicial (dejar vacío para default)</label><input type="number" id="nt-capital" placeholder="100000" /></div>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeModal2('modal-nuevo')">Cancelar</button>
+      <button onclick="crearTorneo()">Crear</button>
+    </div>
+    <div id="nt-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = localStorage.getItem('elevate_token') || prompt('Token de acceso:');
+  if (TOKEN) localStorage.setItem('elevate_token', TOKEN);
+
+  const api = async (method, path, body, isForm) => {
+    const opts = {
+      method,
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    };
+    if (body && !isForm) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    if (isForm) opts.body = body;
+    const res = await fetch(`/api${path}`, opts);
+    return res.json().catch(() => ({}));
+  };
+
+  let torneoActivo = null;
+  let resultadosFile = null;
+
+  async function loadTorneo() {
+    const t = await api('GET', '/tournament/active');
+    torneoActivo = t;
+    const el = document.getElementById('torneo-info');
+    if (!t) { el.innerHTML = '<p style="color:var(--muted)">No hay torneo activo.</p>'; return; }
+    const status = { open: '🟡 Abierto', active: '🟢 Activo', closed: '🔴 Cerrado' };
+    el.innerHTML = `
+      <div class="grid-3">
+        <div class="stat"><div class="value">${t.name}</div><div class="label">Nombre</div></div>
+        <div class="stat"><div class="value">#${t.edition}</div><div class="label">Edición</div></div>
+        <div class="stat"><div class="value">${t.modalidad}</div><div class="label">Modalidad</div></div>
+        <div class="stat"><div class="value">${t.total_participants}</div><div class="label">Participantes</div></div>
+        <div class="stat"><div class="value">$${Number(t.capital_inicial).toLocaleString()}</div><div class="label">Capital inicial</div></div>
+        <div class="stat"><div class="value">${status[t.status] || t.status}</div><div class="label">Estado</div></div>
+      </div>`;
+    loadLeaderboard(t.id);
+    loadUnlinked(t.id);
+  }
+
+  async function loadLeaderboard(tid) {
+    if (!tid && torneoActivo) tid = torneoActivo.id;
+    if (!tid) return;
+    const rows = await api('GET', `/tournament/leaderboard/${tid}`);
+    const wrap = document.getElementById('leaderboard-wrap');
+    if (!rows.length) { wrap.innerHTML = '<p style="color:var(--muted)">Sin datos.</p>'; return; }
+    wrap.innerHTML = `<table>
+      <thead><tr><th>#</th><th>Usuario</th><th>PnL%</th><th>ELO</th><th>Cambio pos.</th></tr></thead>
+      <tbody>${rows.slice(0,20).map(r => `<tr>
+        <td>${r.current_rank}</td>
+        <td>${r.level_emoji||'🟤'} ${r.username||r.correo||'?'}${!r.discord_id?'<span class="tag-warn"> ❓</span>':''}</td>
+        <td class="${r.current_pnl_pct>=0?'tag-ok':'tag-err'}">${r.current_pnl_pct>=0?'+':''}${Number(r.current_pnl_pct).toFixed(2)}%</td>
+        <td>—</td>
+        <td>${r.pos_change>0?'▲'+r.pos_change:r.pos_change<0?'▼'+Math.abs(r.pos_change):'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
+  async function loadUnlinked(tid) {
+    const list = await api('GET', '/unlinked/0');
+    const el = document.getElementById('unlinked-list');
+    if (!list.length) { el.innerHTML = '<p style="color:var(--success)">✅ Todos vinculados.</p>'; return; }
+    el.innerHTML = `<p style="color:var(--muted);margin-bottom:8px">${list.length} correos sin vincular:</p>` +
+      list.slice(0,30).map(c => `<span style="display:inline-block;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;margin:2px;font-size:12px">${c}</span>`).join('') +
+      (list.length>30?`<span style="color:var(--muted)"> ...y ${list.length-30} más</span>`:'');
+  }
+
+  function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
+  function onDragLeave(e) { e.currentTarget.classList.remove('dragover'); }
+  function handleDrop(e, type) {
+    e.preventDefault(); e.currentTarget.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (type === 'results') { resultadosFile = file; showPreview(file); }
+    else { uploadLinksFile(file); }
+  }
+
+  function previewCsv(e, type) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (type === 'results') { resultadosFile = file; showPreview(file); }
+  }
+
+  function showPreview(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const lines = e.target.result.split('\n').slice(0, 11);
+      const headers = lines[0].split(',');
+      const rows = lines.slice(1).filter(Boolean);
+      const preview = document.getElementById('preview-results');
+      preview.style.display = 'block';
+      preview.innerHTML = `<table><thead><tr>${headers.map(h=>`<th>${h.trim()}</th>`).join('')}</tr></thead><tbody>
+        ${rows.map(r=>`<tr>${r.split(',').map(c=>`<td>${c.trim()}</td>`).join('')}</tr>`).join('')}
+      </tbody></table>`;
+      document.getElementById('btn-upload-results').style.display = 'block';
+    };
+    reader.readAsText(file);
+  }
+
+  async function uploadResults() {
+    if (!resultadosFile) return;
+    const form = new FormData();
+    form.append('file', resultadosFile);
+    const res = await api('POST', '/upload-results', form, true);
+    const msg = document.getElementById('results-msg');
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    msg.innerHTML = `<span class="tag-ok">✅ ${res.actualizados} actualizados | ❓ ${res.sinVincular} sin vincular</span>`;
+    loadLeaderboard();
+    loadUnlinked();
+  }
+
+  function uploadLinks(e) { uploadLinksFile(e.target.files[0]); }
+  async function uploadLinksFile(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await api('POST', '/upload-links', form, true);
+    const msg = document.getElementById('links-msg');
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    msg.innerHTML = `<span class="tag-ok">✅ ${res.exitosas} vinculaciones exitosas</span>`;
+  }
+
+  async function searchPlayer() {
+    const q = document.getElementById('search-input').value.trim();
+    if (!q) return;
+    const results = await api('GET', `/players/search?q=${encodeURIComponent(q)}`);
+    const wrap = document.getElementById('search-results');
+    if (!results.length) { wrap.innerHTML = '<p style="color:var(--muted);margin-top:10px">Sin resultados.</p>'; return; }
+    wrap.innerHTML = results.slice(0,5).map(p => `
+      <div class="player-card" onclick="loadPlayerCard('${p.discord_id}',this)" style="cursor:pointer">
+        <strong>${p.level_emoji||'🟤'} ${p.display_name||p.username}</strong>
+        <span style="color:var(--muted);margin-left:8px">${p.correo||''}</span>
+        <span style="float:right">ELO: ${p.elo} | ${p.level}</span>
+      </div>`).join('');
+  }
+
+  const chartInstances = {};
+  async function loadPlayerCard(discordId, el) {
+    const p = await api('GET', `/player/${discordId}`);
+    if (p.error) return;
+    const rachaStr = p.racha_actual > 0 ? `🔥 +${p.racha_actual}` : p.racha_actual < 0 ? `❄️ ${p.racha_actual}` : '—';
+    const chartId = `chart_${discordId}`;
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <strong style="font-size:15px">${p.level_emoji||'🟤'} ${p.display_name||p.username}</strong>
+          <div style="color:var(--muted);font-size:12px;margin-top:4px">${(p.emails||[]).map(e=>e.correo).join(', ')}</div>
+        </div>
+        <div style="text-align:right">
+          <div>ELO: <strong>${p.elo}</strong></div>
+          <div style="color:var(--muted)">${p.level} | Racha: ${rachaStr}</div>
+        </div>
+      </div>
+      <div class="grid-3" style="margin-top:10px">
+        <div class="stat"><div class="value">${p.tournaments_played}</div><div class="label">Torneos</div></div>
+        <div class="stat"><div class="value">${p.top10_count}</div><div class="label">Top 10</div></div>
+        <div class="stat"><div class="value">${p.best_finish ? '#'+p.best_finish : '—'}</div><div class="label">Mejor finish</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="${chartId}"></canvas></div>`;
+
+    const eloHistory = (p.results||[]).slice().reverse().map(r => ({ t: r.torneo_name+' #'+r.edition, v: r.elo_after }));
+    if (eloHistory.length) {
+      if (chartInstances[chartId]) chartInstances[chartId].destroy();
+      chartInstances[chartId] = new Chart(document.getElementById(chartId), {
+        type: 'line',
+        data: {
+          labels: eloHistory.map(e => e.t),
+          datasets: [{ label: 'ELO', data: eloHistory.map(e => e.v), borderColor: '#7C3AED', backgroundColor: 'rgba(124,58,237,.15)', fill: true, tension: .3, pointRadius: 4 }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#2a2a2a' } },
+            y: { ticks: { color: '#888' }, grid: { color: '#2a2a2a' } }
+          }
+        }
+      });
+    }
+  }
+
+  function openModal(id) { document.getElementById(id).classList.add('visible'); }
+  function closeModal(e, id) { if (e.target.id === id) document.getElementById(id).classList.remove('visible'); }
+  function closeModal2(id) { document.getElementById(id).classList.remove('visible'); }
+
+  async function crearTorneo() {
+    const name = document.getElementById('nt-nombre').value.trim();
+    const edition = parseInt(document.getElementById('nt-edicion').value);
+    const modalidad = document.getElementById('nt-modalidad').value;
+    const capital = document.getElementById('nt-capital').value ? parseFloat(document.getElementById('nt-capital').value) : undefined;
+    const res = await api('POST', '/tournament/new', { name, edition, modalidad, capital_inicial: capital });
+    const msg = document.getElementById('nt-msg');
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    msg.innerHTML = `<span class="tag-ok">✅ Torneo creado</span>`;
+    setTimeout(() => { closeModal2('modal-nuevo'); loadTorneo(); }, 1000);
+  }
+
+  async function activarTorneo() {
+    if (!confirm('¿Activar el torneo abierto? Esto publicará la tabla en el canal configurado.')) return;
+    alert('Usá el comando /activar en Discord para activar el torneo (requiere acceso al bot).');
+  }
+
+  async function cerrarTorneo() {
+    if (!confirm('¿Cerrar el torneo activo? ESTA ACCIÓN NO CALCULA ELO. Usá /cerrar-torneo en Discord.')) return;
+    alert('Usá el comando /cerrar-torneo en Discord para calcular ELO y cerrar el torneo correctamente.');
+  }
+
+  // Init
+  loadTorneo();
+</script>
+</body>
+</html>

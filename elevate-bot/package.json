@@ -1,0 +1,24 @@
+{
+  "name": "elevate-bot",
+  "version": "1.0.0",
+  "description": "Bot de Discord para gestionar torneos de trading Elevate — Impulse World",
+  "main": "src/bot/index.js",
+  "scripts": {
+    "start": "node src/bot/index.js",
+    "dashboard": "node src/dashboard/server.js",
+    "deploy": "node src/bot/deploy-commands.js",
+    "test": "node --test tests/elo.test.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.4.3",
+    "csv-parser": "^3.0.0",
+    "dotenv": "^16.4.5",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
