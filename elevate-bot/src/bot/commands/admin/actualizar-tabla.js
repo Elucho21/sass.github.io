@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../../database/db');
+const { isAuthorized } = require('../../../utils/auth');
 const { generateLeaderboardText, formatLastUpdated } = require('../../../utils/leaderboard');
 
 module.exports = {
@@ -8,8 +9,8 @@ module.exports = {
     .setDescription('[Admin] Refrescá el mensaje pinneado con los datos actuales'),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
-      return interaction.reply({ content: '❌ No tenés permisos de administrador.', ephemeral: true });
+    if (!isAuthorized(interaction)) {
+      return interaction.reply({ content: '❌ No tenés permisos para ejecutar este comando.', ephemeral: true });
     }
 
     const torneo = db.prepare("SELECT * FROM tournaments WHERE status = 'active' ORDER BY id DESC LIMIT 1").get();

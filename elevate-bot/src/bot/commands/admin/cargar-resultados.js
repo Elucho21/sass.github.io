@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const db = require('../../../database/db');
+const { isAuthorized } = require('../../../utils/auth');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const { getLevelEmoji } = require('../../../utils/elo');
@@ -17,8 +18,8 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
-      return interaction.reply({ content: '❌ No tenés permisos de administrador.', ephemeral: true });
+    if (!isAuthorized(interaction)) {
+      return interaction.reply({ content: '❌ No tenés permisos para ejecutar este comando.', ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });

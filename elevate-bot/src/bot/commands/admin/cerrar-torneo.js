@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../../database/db');
+const { isAuthorized } = require('../../../utils/auth');
 const { processTournamentElo } = require('../../../utils/elo');
 const { checkAchievements } = require('../../../utils/achievements');
 const { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed } = require('../../../utils/embeds');
@@ -13,8 +14,8 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
-      return interaction.reply({ content: '❌ No tenés permisos de administrador.', ephemeral: true });
+    if (!isAuthorized(interaction)) {
+      return interaction.reply({ content: '❌ No tenés permisos para ejecutar este comando.', ephemeral: true });
     }
 
     const torneoId = interaction.options.getInteger('torneo_id');

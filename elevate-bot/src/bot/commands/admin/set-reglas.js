@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../../database/db');
+const { isAuthorized } = require('../../../utils/auth');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -8,8 +9,8 @@ module.exports = {
     .addStringOption(o => o.setName('texto').setDescription('Texto de las reglas').setRequired(true)),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
-      return interaction.reply({ content: '❌ No tenés permisos de administrador.', ephemeral: true });
+    if (!isAuthorized(interaction)) {
+      return interaction.reply({ content: '❌ No tenés permisos para ejecutar este comando.', ephemeral: true });
     }
     const texto = interaction.options.getString('texto');
     const torneo = db.prepare("SELECT id FROM tournaments WHERE status IN ('open','active') ORDER BY id DESC LIMIT 1").get();

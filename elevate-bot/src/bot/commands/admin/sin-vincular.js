@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../../../database/db');
+const { isAuthorized } = require('../../../utils/auth');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -7,8 +8,8 @@ module.exports = {
     .setDescription('[Admin] Mostrá los correos del último CSV sin cuenta de Discord vinculada'),
 
   async execute(interaction) {
-    if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
-      return interaction.reply({ content: '❌ No tenés permisos de administrador.', ephemeral: true });
+    if (!isAuthorized(interaction)) {
+      return interaction.reply({ content: '❌ No tenés permisos para ejecutar este comando.', ephemeral: true });
     }
 
     const config = db.prepare("SELECT value FROM server_config WHERE key = 'last_csv_unlinked'").get();
