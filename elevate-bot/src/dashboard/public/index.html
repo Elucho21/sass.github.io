@@ -485,9 +485,9 @@
     const torneos = await api('GET', '/tournament/list');
     const el = document.getElementById('tournament-list');
     if (!torneos || !torneos.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin torneos.</p>'; return; }
-    const statusMap = { open:'🟡 Abierto', active:'🟢 Activo', closed:'🔴 Cerrado' };
+    const statusMap = { open:'🟡 Abierto', active:'🟢 Activo', closed:'🔴 Cerrado', loading:'⚙️ Procesando' };
     el.innerHTML = `<table>
-      <thead><tr><th>ID</th><th>Torneo</th><th>Modalidad</th><th>Estado</th><th>Traders</th><th>ELO calculado</th></tr></thead>
+      <thead><tr><th>ID</th><th>Torneo</th><th>Modalidad</th><th>Estado</th><th>Traders</th><th>ELO calculado</th><th></th></tr></thead>
       <tbody>${torneos.map(t=>`<tr>
         <td style="color:var(--muted)">${t.id}</td>
         <td><strong>${t.name} #${t.edition}</strong></td>
@@ -495,8 +495,17 @@
         <td>${statusMap[t.status]||t.status}</td>
         <td>${t.snapshot_count}</td>
         <td>${t.results_count > 0 ? `<span class="tag-ok">✅ ${t.results_count}</span>` : '<span class="tag-warn">—</span>'}</td>
+        <td>${t.status !== 'active' ? `<button onclick="deleteTorneo(${t.id},'${t.name} #${t.edition}')" style="background:var(--danger);padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🗑</button>` : ''}</td>
       </tr>`).join('')}</tbody>
     </table>`;
+  }
+
+  async function deleteTorneo(id, nombre) {
+    if (!confirm(`¿Eliminar el torneo "${nombre}" (ID ${id})?\n\nEsto borrará también sus snapshots y resultados. Esta acción no se puede deshacer.`)) return;
+    const res = await api('DELETE', `/tournament/${id}`);
+    if (res.error) { alert('Error: ' + res.error); return; }
+    loadTournamentList();
+    loadTorneo();
   }
 
   // Init

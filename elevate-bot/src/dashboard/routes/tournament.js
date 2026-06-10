@@ -121,10 +121,21 @@ router.post('/upload-and-close', upload.single('file'), async (req, res) => {
     // Crear el torneo histórico
     if (!name || !edition || !modalidad) return res.status(400).json({ error: 'Faltan nombre, edición o modalidad' });
     const capital = parseFloat(capital_inicial) || (modalidad === 'Month' ? 300000 : 100000);
-    const ins = db.prepare(`
-      INSERT INTO tournaments (name, edition, modalidad, capital_inicial) VALUES (?, ?, ?, ?)
-    `).run(name, edition, modalidad, capital);
-    torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(ins.lastInsertRowid);
+
+    // Reutilizar si ya existe un torneo sin cerrar con los mismos datos (evita duplicados por reintentos)
+    const existente = db.prepare(
+      "SELECT * FROM tournaments WHERE name=? AND edition=? AND modalidad=? AND status != 'closed'"
+    ).get(name, edition, modalidad);
+
+    if (existente) {
+      torneo = existente;
+    } else {
+      // Usar status 'loading' para que no interfiera con el torneo activo mientras se procesa
+      const ins = db.prepare(`
+        INSERT INTO tournaments (name, edition, modalidad, capital_inicial, status) VALUES (?, ?, ?, ?, 'loading')
+      `).run(name, edition, modalidad, capital);
+      torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(ins.lastInsertRowid);
+    }
   }
 
   // Procesar CSV si viene archivo
@@ -190,6 +201,20 @@ router.post('/upload-and-close', upload.single('file'), async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// DELETE /api/tournament/:id — elimina torneo + snapshots + results (no permite borrar torneos activos)
+router.delete('/:id', (req, res) => {
+  const torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(Number(req.params.id));
+  if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
+  if (torneo.status === 'active') return res.status(400).json({ error: 'No se puede eliminar el torneo activo' });
+
+  db.prepare('DELETE FROM leaderboard_snapshots WHERE tournament_id = ?').run(torneo.id);
+  db.prepare('DELETE FROM results WHERE tournament_id = ?').run(torneo.id);
+  db.prepare('DELETE FROM achievements WHERE tournament_id = ?').run(torneo.id);
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(torneo.id);
+
+  res.json({ message: `Torneo ${torneo.name} #${torneo.edition} eliminado` });
 });
 
 // GET /api/leaderboard/:tid

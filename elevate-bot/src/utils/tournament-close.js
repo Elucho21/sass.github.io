@@ -20,7 +20,10 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
     ORDER BY current_rank ASC
   `).all(torneoId);
 
-  if (!snapshots.length) throw new Error('No hay resultados cargados con traders vinculados');
+  if (!snapshots.length) {
+    db.prepare("UPDATE tournaments SET status = 'closed', end_date = datetime('now') WHERE id = ?").run(torneoId);
+    return { procesados: 0, top3: [], ascensos: 0, logros: 0 };
+  }
 
   const discordIds = [...new Set(snapshots.map(s => s.discord_id))];
   const playersMap = {};
