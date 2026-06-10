@@ -155,6 +155,38 @@
     <button class="secondary" style="margin-top:10px" onclick="loadUnlinked()">Actualizar lista</button>
   </div>
 
+  <!-- Cargar torneo histórico -->
+  <div class="card">
+    <h2>📂 Cargar Torneo Histórico</h2>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:14px">Crea el torneo, sube el CSV y calcula el ELO en un solo paso. Funciona aunque haya un torneo activo.</p>
+    <div class="grid-2" style="margin-bottom:12px">
+      <div class="form-row" style="margin:0"><label>Nombre</label><input type="text" id="ht-nombre" placeholder="Elevate Night" /></div>
+      <div class="form-row" style="margin:0"><label>Edición</label><input type="number" id="ht-edicion" min="1" placeholder="19" /></div>
+      <div class="form-row" style="margin:0">
+        <label>Modalidad</label>
+        <select id="ht-modalidad"><option>Night</option><option>Day</option><option>Month</option></select>
+      </div>
+      <div class="form-row" style="margin:0"><label>Capital inicial</label><input type="number" id="ht-capital" placeholder="100000" /></div>
+    </div>
+    <div class="drop-zone" id="drop-historico" ondrop="handleDrop(event,'historico')" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" onclick="document.getElementById('file-historico').click()">
+      <div style="font-size:28px">📁</div>
+      <p id="drop-historico-label">Arrastrá o hacé clic para seleccionar el CSV del torneo</p>
+    </div>
+    <input type="file" id="file-historico" accept=".csv" style="display:none" onchange="onHistoricoFile(event)" />
+    <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button onclick="procesarHistorico()" id="btn-historico">▶ Procesar torneo histórico</button>
+      <span id="historico-msg" style="font-size:13px"></span>
+    </div>
+    <!-- Lista de todos los torneos -->
+    <div style="margin-top:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0">Historial de torneos</h3>
+        <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="loadTournamentList()">↻ Actualizar</button>
+      </div>
+      <div id="tournament-list"><p style="color:var(--muted);font-size:13px">Cargando...</p></div>
+    </div>
+  </div>
+
   <!-- Leaderboard preview -->
   <div class="card">
     <h2>Leaderboard actual</h2>
@@ -259,14 +291,6 @@
 
   function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
   function onDragLeave(e) { e.currentTarget.classList.remove('dragover'); }
-  function handleDrop(e, type) {
-    e.preventDefault(); e.currentTarget.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    if (type === 'results') { resultadosFile = file; showPreview(file); }
-    else { uploadLinksFile(file); }
-  }
-
   function previewCsv(e, type) {
     const file = e.target.files[0];
     if (!file) return;
@@ -394,15 +418,90 @@
   }
 
   async function cerrarTorneo() {
-    if (!confirm('¿Cerrar el torneo activo?\n\n⚠️ ATENCIÓN: Esto solo cambia el estado. Para calcular ELO usá /cerrar-torneo en Discord.')) return;
-    const res = await api('POST', '/tournament/close');
+    if (!confirm('¿Cerrar el torneo activo?\n\nEsto calculará el ELO de todos los traders vinculados y cerrará el torneo.')) return;
+    const res = await api('POST', '/tournament/close', {});
     if (res.error) { alert('❌ ' + res.error); return; }
-    alert('✅ Torneo cerrado (solo estado).\nRecordá usar /cerrar-torneo en Discord para calcular ELO.');
+    alert(`✅ ${res.message}`);
     loadTorneo();
+    loadTournamentList();
+  }
+
+  // ── Histórico ────────────────────────────────────────────────────
+  let historicoFile = null;
+
+  function onHistoricoFile(e) {
+    historicoFile = e.target.files[0];
+    if (historicoFile) document.getElementById('drop-historico-label').textContent = '📄 ' + historicoFile.name;
+  }
+
+  function handleDrop(e, type) {
+    e.preventDefault(); e.currentTarget.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (type === 'results') { resultadosFile = file; showPreview(file); }
+    else if (type === 'links') { uploadLinksFile(file); }
+    else if (type === 'historico') {
+      historicoFile = file;
+      document.getElementById('drop-historico-label').textContent = '📄 ' + file.name;
+    }
+  }
+
+  async function procesarHistorico() {
+    const nombre = document.getElementById('ht-nombre').value.trim();
+    const edicion = document.getElementById('ht-edicion').value.trim();
+    const modalidad = document.getElementById('ht-modalidad').value;
+    const capital = document.getElementById('ht-capital').value;
+    const msg = document.getElementById('historico-msg');
+    const btn = document.getElementById('btn-historico');
+
+    if (!nombre || !edicion) { msg.innerHTML = '<span class="tag-err">❌ Completá nombre y edición</span>'; return; }
+    if (!historicoFile) { msg.innerHTML = '<span class="tag-err">❌ Seleccioná un CSV</span>'; return; }
+
+    btn.disabled = true; btn.textContent = '⏳ Procesando...';
+    msg.innerHTML = '';
+
+    const form = new FormData();
+    form.append('name', nombre);
+    form.append('edition', edicion);
+    form.append('modalidad', modalidad);
+    if (capital) form.append('capital_inicial', capital);
+    form.append('file', historicoFile);
+
+    const res = await api('POST', '/tournament/upload-and-close', form, true);
+    btn.disabled = false; btn.textContent = '▶ Procesar torneo histórico';
+
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+
+    msg.innerHTML = `<span class="tag-ok">✅ ${res.torneo} — ${res.procesados} traders | 🏆 ${res.top3?.map(t=>t.username).join(', ')||'—'}</span>`;
+    document.getElementById('ht-nombre').value = '';
+    document.getElementById('ht-edicion').value = '';
+    historicoFile = null;
+    document.getElementById('drop-historico-label').textContent = 'Arrastrá o hacé clic para seleccionar el CSV del torneo';
+    document.getElementById('file-historico').value = '';
+    loadTournamentList();
+  }
+
+  async function loadTournamentList() {
+    const torneos = await api('GET', '/tournament/list');
+    const el = document.getElementById('tournament-list');
+    if (!torneos || !torneos.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">Sin torneos.</p>'; return; }
+    const statusMap = { open:'🟡 Abierto', active:'🟢 Activo', closed:'🔴 Cerrado' };
+    el.innerHTML = `<table>
+      <thead><tr><th>ID</th><th>Torneo</th><th>Modalidad</th><th>Estado</th><th>Traders</th><th>ELO calculado</th></tr></thead>
+      <tbody>${torneos.map(t=>`<tr>
+        <td style="color:var(--muted)">${t.id}</td>
+        <td><strong>${t.name} #${t.edition}</strong></td>
+        <td>${t.modalidad}</td>
+        <td>${statusMap[t.status]||t.status}</td>
+        <td>${t.snapshot_count}</td>
+        <td>${t.results_count > 0 ? `<span class="tag-ok">✅ ${t.results_count}</span>` : '<span class="tag-warn">—</span>'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
   }
 
   // Init
   loadTorneo();
+  loadTournamentList();
 </script>
 </body>
 </html>
