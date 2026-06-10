@@ -1,23 +1,11 @@
 const express = require('express');
 const multer = require('multer');
-const csv = require('csv-parser');
-const { Readable } = require('stream');
 const db = require('../../database/db');
 const { getLevelEmoji } = require('../../utils/elo');
+const { parseCsv, normalizeRows } = require('../../utils/csv');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-
-function parseCsv(buffer) {
-  return new Promise((resolve, reject) => {
-    const results = [];
-    Readable.from(buffer.toString())
-      .pipe(csv({ mapHeaders: ({ header }) => header.trim().toLowerCase().replace(/\s+/g, '_') }))
-      .on('data', d => results.push(d))
-      .on('end', () => resolve(results))
-      .on('error', reject);
-  });
-}
 
 // POST /api/upload-results
 router.post('/upload-results', upload.single('file'), async (req, res) => {
@@ -25,8 +13,9 @@ router.post('/upload-results', upload.single('file'), async (req, res) => {
   if (!torneo) return res.status(400).json({ error: 'No hay torneo activo' });
   if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
 
-  const rows = await parseCsv(req.file.buffer).catch(() => null);
-  if (!rows) return res.status(400).json({ error: 'CSV inválido' });
+  const rawRows = await parseCsv(req.file.buffer).catch(() => null);
+  if (!rawRows || !rawRows.length) return res.status(400).json({ error: 'CSV inválido o vacío' });
+  const rows = normalizeRows(rawRows);
 
   const sinVincular = [];
   let actualizados = 0;

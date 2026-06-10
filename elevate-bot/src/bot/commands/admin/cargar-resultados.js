@@ -1,10 +1,9 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const db = require('../../../database/db');
 const { isAuthorized } = require('../../../utils/auth');
-const csv = require('csv-parser');
-const { Readable } = require('stream');
 const { getLevelEmoji } = require('../../../utils/elo');
 const { generateLeaderboardText, formatLastUpdated } = require('../../../utils/leaderboard');
+const { parseCsv, normalizeRows } = require('../../../utils/csv');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -157,38 +156,3 @@ module.exports = {
   },
 };
 
-function parseCsv(buffer) {
-  return new Promise((resolve, reject) => {
-    const results = [];
-    const stream = Readable.from(buffer.toString());
-    stream
-      .pipe(csv({ mapHeaders: ({ header }) => header.trim().toLowerCase().replace(/\s+/g, '_') }))
-      .on('data', data => results.push(data))
-      .on('end', () => resolve(results))
-      .on('error', reject);
-  });
-}
-
-// Detecta automáticamente el formato y devuelve filas normalizadas:
-// { correo, equidad_actual, rank, alias }
-// Formato Elevate: tiene columna "equity" → rank calculado por orden desc de equity
-// Formato propio:  tiene columna "equidad_actual" → se usa tal cual
-function normalizeRows(rows) {
-  const sample = rows[0];
-  const isElevateFormat = 'equity' in sample;
-
-  if (!isElevateFormat) {
-    // Formato propio — agregar alias=null para compatibilidad
-    return rows.map(r => ({ ...r, alias: r.alias || null }));
-  }
-
-  // Formato Elevate: ordenar por Equity desc y asignar rank
-  const sorted = [...rows].sort((a, b) => parseFloat(b.equity) - parseFloat(a.equity));
-
-  return sorted.map((r, i) => ({
-    correo:        (r.correo || '').trim(),
-    equidad_actual: r.equity,
-    rank:          i + 1,
-    alias:         (r.alias || '').trim() || null,
-  }));
-}
