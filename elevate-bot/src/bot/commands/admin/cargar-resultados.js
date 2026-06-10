@@ -88,8 +88,7 @@ module.exports = {
 
       const link = db.prepare('SELECT * FROM email_links WHERE correo = ?').get(correo.toLowerCase().trim());
       let discordId = null;
-      // Fallback: alias del CSV (formato Elevate) > correo
-      let username = alias || correo;
+      let username = alias || '—';
       let levelEmoji = '🟤';
 
       if (link) {

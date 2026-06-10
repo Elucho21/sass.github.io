@@ -157,7 +157,7 @@ router.post('/upload-and-close', upload.single('file'), async (req, res) => {
         const en_negativo = pnl_pct < 0 ? 1 : 0;
 
         const link = db.prepare('SELECT * FROM email_links WHERE correo = ?').get(correo);
-        let discordId = null, username = row.alias || correo, levelEmoji = '🟤';
+        let discordId = null, username = row.alias || '—', levelEmoji = '🟤';
         if (link) {
           discordId = link.discord_id;
           const p = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(discordId);
