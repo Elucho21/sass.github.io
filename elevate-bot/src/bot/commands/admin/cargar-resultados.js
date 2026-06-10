@@ -10,7 +10,7 @@ module.exports = {
     .setName('cargar-resultados')
     .setDescription('[Admin] Cargá resultados CSV del torneo activo')
     .addAttachmentOption(o =>
-      o.setName('archivo').setDescription('CSV con columnas: correo, equidad_actual, rank').setRequired(true)
+      o.setName('archivo').setDescription('CSV formato Elevate (Equity/Correo/Alias) o formato propio (correo/equidad_actual/rank)').setRequired(true)
     ),
 
   async execute(interaction) {
@@ -38,10 +38,11 @@ module.exports = {
       return interaction.editReply('❌ No se pudo descargar el archivo.');
     }
 
-    const rows = await parseCsv(csvBuffer);
-    if (!rows.length) {
+    const rawRows = await parseCsv(csvBuffer);
+    if (!rawRows.length) {
       return interaction.editReply('❌ El CSV está vacío o tiene un formato incorrecto.');
     }
+    const rows = normalizeRows(rawRows);
 
     // Guardar CSV sin vincular en una tabla temporal en memoria
     const sinVincular = [];
@@ -66,7 +67,7 @@ module.exports = {
     `);
 
     const insertOrUpdate = db.transaction((rowData) => {
-      const { correo, equidad_actual, rank } = rowData;
+      const { correo, equidad_actual, rank, alias } = rowData;
       const equidad = parseFloat(equidad_actual);
       const rankNum = parseInt(rank, 10);
 
@@ -77,7 +78,8 @@ module.exports = {
 
       const link = db.prepare('SELECT * FROM email_links WHERE correo = ?').get(correo.toLowerCase().trim());
       let discordId = null;
-      let username = correo;
+      // Fallback: alias del CSV (formato Elevate) > correo
+      let username = alias || correo;
       let levelEmoji = '🟤';
 
       if (link) {
@@ -154,4 +156,28 @@ function parseCsv(buffer) {
       .on('end', () => resolve(results))
       .on('error', reject);
   });
+}
+
+// Detecta automáticamente el formato y devuelve filas normalizadas:
+// { correo, equidad_actual, rank, alias }
+// Formato Elevate: tiene columna "equity" → rank calculado por orden desc de equity
+// Formato propio:  tiene columna "equidad_actual" → se usa tal cual
+function normalizeRows(rows) {
+  const sample = rows[0];
+  const isElevateFormat = 'equity' in sample;
+
+  if (!isElevateFormat) {
+    // Formato propio — agregar alias=null para compatibilidad
+    return rows.map(r => ({ ...r, alias: r.alias || null }));
+  }
+
+  // Formato Elevate: ordenar por Equity desc y asignar rank
+  const sorted = [...rows].sort((a, b) => parseFloat(b.equity) - parseFloat(a.equity));
+
+  return sorted.map((r, i) => ({
+    correo:        (r.correo || '').trim(),
+    equidad_actual: r.equity,
+    rank:          i + 1,
+    alias:         (r.alias || '').trim() || null,
+  }));
 }
