@@ -558,6 +558,7 @@
         <td style="white-space:nowrap;display:flex;gap:4px">
           <button onclick="openEditTorneo(${t.id},'${t.name.replace(/'/g,"\\'")}',${t.edition},'${t.modalidad}')" title="Editar" style="background:#4B5563;padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">✏️</button>
           ${t.results_count === 0 && t.snapshot_count > 0 ? `<button onclick="recalcTorneo(${t.id},'${t.name} #${t.edition}')" title="Recalcular ELO" style="background:#7C3AED;padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🔄</button>` : ''}
+          ${t.results_count > 0 ? `<button onclick="forceRecalcTorneo(${t.id},'${t.name} #${t.edition}')" title="Forzar recálculo (revierte y recalcula)" style="background:#B45309;padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">⚡</button>` : ''}
           ${t.status !== 'active' ? `<button onclick="deleteTorneo(${t.id},'${t.name} #${t.edition}')" title="Eliminar" style="background:var(--danger);padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🗑</button>` : ''}
         </td>
       </tr>
@@ -581,6 +582,15 @@
     document.getElementById('link-correo').value = '';
     document.getElementById('link-discordid').value = '';
     document.getElementById('link-username').value = '';
+  }
+
+  async function forceRecalcTorneo(id, nombre) {
+    if (!confirm(`⚡ FORZAR RECÁLCULO de "${nombre}"?\n\nEsto revertirá los resultados de ELO existentes para este torneo y los calculará desde cero con el código actual.\n\nUsalo cuando un torneo tiene ELO incorrecto (ej: cambio 0 por bug).`)) return;
+    const res = await api('POST', `/tournament/${id}/force-recalc`);
+    if (res.error) { alert('Error: ' + res.error); return; }
+    alert(`⚡ ${nombre}\nRevertidos: ${res.revertidos} | Recalculados: ${res.procesados}`);
+    loadTournamentList();
+    loadLinkedPlayers();
   }
 
   async function recalcTorneo(id, nombre) {

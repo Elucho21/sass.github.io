@@ -239,6 +239,41 @@ router.post('/:id/recalc-elo', async (req, res) => {
   }
 });
 
+// POST /api/tournament/:id/force-recalc — revierte resultados existentes y recalcula desde cero
+router.post('/:id/force-recalc', async (req, res) => {
+  const torneoId = Number(req.params.id);
+  const torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(torneoId);
+  if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+  // Revertir stats de cada jugador usando los valores almacenados en results
+  const existingResults = db.prepare('SELECT * FROM results WHERE tournament_id = ?').all(torneoId);
+
+  db.transaction(() => {
+    for (const r of existingResults) {
+      db.prepare(`
+        UPDATE players SET
+          elo            = ?,
+          racha_actual   = ?,
+          tournaments_played = MAX(0, tournaments_played - 1),
+          tournaments_won    = MAX(0, tournaments_won - CASE WHEN ? = 1 THEN 1 ELSE 0 END),
+          top10_count        = MAX(0, top10_count - CASE WHEN ? <= 10 THEN 1 ELSE 0 END),
+          total_pnl_sum      = total_pnl_sum - ?
+        WHERE discord_id = ?
+      `).run(r.elo_before, r.racha_antes, r.rank_final, r.rank_final, r.pnl_pct, r.discord_id);
+    }
+    // Borrar resultados y logros del torneo
+    db.prepare('DELETE FROM results WHERE tournament_id = ?').run(torneoId);
+    db.prepare('DELETE FROM achievements WHERE tournament_id = ?').run(torneoId);
+  })();
+
+  try {
+    const result = await recalcMissingElo(torneoId);
+    res.json({ message: `Recálculo forzado: ${result.procesados} traders procesados.`, revertidos: existingResults.length, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/tournament/:id — elimina torneo + snapshots + results (no permite borrar torneos activos)
 router.delete('/:id', (req, res) => {
   const torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(Number(req.params.id));
