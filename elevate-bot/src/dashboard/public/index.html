@@ -203,6 +203,18 @@
     </div>
   </div>
 
+  <!-- Traders vinculados -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">👥 Traders vinculados</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="linked-filter" placeholder="Filtrar por nombre o correo..." style="width:200px;padding:5px 10px;font-size:12px" oninput="filterLinked(this.value)" />
+        <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="loadLinkedPlayers()">↻ Actualizar</button>
+      </div>
+    </div>
+    <div id="linked-players-wrap"><p style="color:var(--muted);font-size:13px">Cargando...</p></div>
+  </div>
+
   <!-- Leaderboard preview -->
   <div class="card">
     <h2>Leaderboard actual</h2>
@@ -583,11 +595,56 @@
     }
   }
 
+  let allLinkedPlayers = [];
+
+  async function loadLinkedPlayers() {
+    const players = await api('GET', '/players');
+    allLinkedPlayers = players || [];
+    renderLinkedPlayers(allLinkedPlayers);
+  }
+
+  function renderLinkedPlayers(players) {
+    const el = document.getElementById('linked-players-wrap');
+    if (!players.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No hay traders vinculados aún.</p>'; return; }
+    const levelEmoji = { Rookie:'🟤', Trader:'🟢', Pro:'🔵', Elite:'🟣', Master:'🟡', Legend:'🔴' };
+    el.innerHTML = `
+      <p style="color:var(--muted);font-size:12px;margin-bottom:8px">${players.length} traders vinculados</p>
+      <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Nivel</th><th>Username</th><th>Correo(s)</th>
+          <th style="text-align:right">ELO</th><th style="text-align:right">Torneos</th>
+          <th style="text-align:right">Mejor pos.</th><th style="text-align:right">Top10</th>
+        </tr></thead>
+        <tbody>${players.map(p => `<tr>
+          <td title="${p.level}">${levelEmoji[p.level] || '🟤'} ${p.level}</td>
+          <td><strong>${p.display_name || p.username}</strong></td>
+          <td style="font-size:11px;color:var(--muted)">${p.correos || '—'}</td>
+          <td style="text-align:right"><strong>${p.elo}</strong></td>
+          <td style="text-align:right">${p.tournaments_played}</td>
+          <td style="text-align:right">${p.best_finish ? '#' + p.best_finish : '—'}</td>
+          <td style="text-align:right">${p.top10_count}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      </div>`;
+  }
+
+  function filterLinked(q) {
+    const lower = q.toLowerCase();
+    const filtered = allLinkedPlayers.filter(p =>
+      (p.display_name || '').toLowerCase().includes(lower) ||
+      (p.username || '').toLowerCase().includes(lower) ||
+      (p.correos || '').toLowerCase().includes(lower)
+    );
+    renderLinkedPlayers(filtered);
+  }
+
   // Init
   checkBotStatus();
   setInterval(checkBotStatus, 15000);
   loadTorneo();
   loadTournamentList();
+  loadLinkedPlayers();
 </script>
 </body>
 </html>

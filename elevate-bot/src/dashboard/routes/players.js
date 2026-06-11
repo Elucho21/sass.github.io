@@ -2,6 +2,34 @@ const express = require('express');
 const db = require('../../database/db');
 const router = express.Router();
 
+// GET /api/players — lista todos los jugadores vinculados con sus correos
+router.get('/', (req, res) => {
+  const players = db.prepare(`
+    SELECT
+      p.discord_id, p.username, p.display_name, p.elo, p.level,
+      p.tournaments_played, p.tournaments_won, p.best_finish,
+      p.racha_actual, p.top10_count, p.created_at,
+      GROUP_CONCAT(el.correo, ', ') as correos
+    FROM players p
+    LEFT JOIN email_links el ON el.discord_id = p.discord_id
+    GROUP BY p.discord_id
+    ORDER BY p.elo DESC
+  `).all();
+  res.json(players);
+});
+
+// GET /api/players/search?q=  — DEBE estar antes de /:discord_id
+router.get('/search', (req, res) => {
+  const q = `%${req.query.q || ''}%`;
+  const players = db.prepare(`
+    SELECT p.*, el.correo FROM players p
+    LEFT JOIN email_links el ON el.discord_id = p.discord_id
+    WHERE p.username LIKE ? OR p.display_name LIKE ? OR el.correo LIKE ?
+    LIMIT 20
+  `).all(q, q, q);
+  res.json(players);
+});
+
 // GET /api/player/:discord_id
 router.get('/:discord_id', (req, res) => {
   const player = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(req.params.discord_id);
@@ -20,18 +48,6 @@ router.get('/:discord_id', (req, res) => {
   res.json({ ...player, results, achievements, emails });
 });
 
-// GET /api/players/search?q=
-router.get('/search', (req, res) => {
-  const q = `%${req.query.q || ''}%`;
-  const players = db.prepare(`
-    SELECT p.*, el.correo FROM players p
-    LEFT JOIN email_links el ON el.discord_id = p.discord_id
-    WHERE p.username LIKE ? OR p.display_name LIKE ? OR el.correo LIKE ?
-    LIMIT 20
-  `).all(q, q, q);
-  res.json(players);
-});
-
 // POST /api/player/link — vincula un correo a un Discord ID sin necesitar CSV
 router.post('/link', (req, res) => {
   const { correo, discord_id, username } = req.body;
@@ -39,7 +55,6 @@ router.post('/link', (req, res) => {
 
   const correoNorm = correo.toLowerCase().trim();
 
-  // Crear player si no existe
   const existing = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(discord_id);
   const wasNew = !existing;
   if (wasNew) {
@@ -47,10 +62,8 @@ router.post('/link', (req, res) => {
     db.prepare('INSERT OR IGNORE INTO players (discord_id, username, display_name) VALUES (?, ?, ?)').run(discord_id, displayName, displayName);
   }
 
-  // Vincular correo
   db.prepare("INSERT OR REPLACE INTO email_links (correo, discord_id, linked_by) VALUES (?, ?, 'admin')").run(correoNorm, discord_id);
 
-  // Actualizar snapshots existentes donde el correo aparece con discord_id NULL
   const player = db.prepare('SELECT * FROM players WHERE discord_id = ?').get(discord_id);
   const { getLevelEmoji } = require('../../utils/elo');
   db.prepare(`
@@ -74,3 +87,4 @@ router.get('/unlinked/:tid', (req, res) => {
 });
 
 module.exports = router;
+
