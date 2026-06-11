@@ -232,6 +232,25 @@
   </div>
 </main>
 
+<!-- Modal editar torneo -->
+<div class="modal-bg" id="modal-edit-torneo" onclick="closeModal(event,'modal-edit-torneo')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>✏️ Editar torneo</h3>
+    <input type="hidden" id="edit-torneo-id" />
+    <div class="form-row"><label>Nombre</label><input type="text" id="edit-torneo-nombre" /></div>
+    <div class="form-row"><label>Edición</label><input type="number" id="edit-torneo-edicion" min="1" /></div>
+    <div class="form-row">
+      <label>Modalidad</label>
+      <select id="edit-torneo-modalidad"><option>Night</option><option>Day</option><option>Month</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeModal2('modal-edit-torneo')">Cancelar</button>
+      <button onclick="guardarEditTorneo()">Guardar</button>
+    </div>
+    <div id="edit-torneo-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
 <!-- Modal nuevo torneo -->
 <div class="modal-bg" id="modal-nuevo" onclick="closeModal(event,'modal-nuevo')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -516,16 +535,26 @@
     const statusMap = { open:'🟡 Abierto', active:'🟢 Activo', closed:'🔴 Cerrado', loading:'⚙️ Procesando' };
     el.innerHTML = `<table>
       <thead><tr><th>ID</th><th>Torneo</th><th>Modalidad</th><th>Estado</th><th>Traders</th><th>ELO calculado</th><th></th></tr></thead>
-      <tbody>${torneos.map(t=>`<tr>
+      <tbody>${torneos.map(t=>`
+      <tr>
         <td style="color:var(--muted)">${t.id}</td>
         <td><strong>${t.name} #${t.edition}</strong></td>
         <td>${t.modalidad}</td>
         <td>${statusMap[t.status]||t.status}</td>
-        <td>${t.snapshot_count}</td>
+        <td>
+          <button onclick="toggleParticipants(${t.id})" title="Ver participantes"
+            style="background:none;border:none;cursor:pointer;color:var(--primary);font-size:13px;padding:0">${t.snapshot_count} 👁</button>
+        </td>
         <td>${t.results_count > 0 ? `<span class="tag-ok">✅ ${t.results_count}</span>` : '<span class="tag-warn">—</span>'}</td>
         <td style="white-space:nowrap;display:flex;gap:4px">
+          <button onclick="openEditTorneo(${t.id},'${t.name.replace(/'/g,"\\'")}',${t.edition},'${t.modalidad}')" title="Editar" style="background:#4B5563;padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">✏️</button>
           ${t.results_count === 0 && t.snapshot_count > 0 ? `<button onclick="recalcTorneo(${t.id},'${t.name} #${t.edition}')" title="Recalcular ELO" style="background:#7C3AED;padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🔄</button>` : ''}
           ${t.status !== 'active' ? `<button onclick="deleteTorneo(${t.id},'${t.name} #${t.edition}')" title="Eliminar" style="background:var(--danger);padding:2px 8px;font-size:11px;border:none;border-radius:4px;color:#fff;cursor:pointer">🗑</button>` : ''}
+        </td>
+      </tr>
+      <tr id="participants-row-${t.id}" style="display:none">
+        <td colspan="7" style="padding:0">
+          <div id="participants-${t.id}" style="padding:10px 16px;background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.06)"></div>
         </td>
       </tr>`).join('')}</tbody>
     </table>`;
@@ -637,6 +666,68 @@
       (p.correos || '').toLowerCase().includes(lower)
     );
     renderLinkedPlayers(filtered);
+  }
+
+  // ── Editar torneo ──────────────────────────────────────────────
+  function openEditTorneo(id, name, edition, modalidad) {
+    document.getElementById('edit-torneo-id').value = id;
+    document.getElementById('edit-torneo-nombre').value = name;
+    document.getElementById('edit-torneo-edicion').value = edition;
+    document.getElementById('edit-torneo-modalidad').value = modalidad;
+    document.getElementById('edit-torneo-msg').innerHTML = '';
+    document.getElementById('modal-edit-torneo').style.display = 'flex';
+  }
+
+  async function guardarEditTorneo() {
+    const id = document.getElementById('edit-torneo-id').value;
+    const name = document.getElementById('edit-torneo-nombre').value.trim();
+    const edition = document.getElementById('edit-torneo-edicion').value;
+    const modalidad = document.getElementById('edit-torneo-modalidad').value;
+    const msg = document.getElementById('edit-torneo-msg');
+    if (!name || !edition) { msg.innerHTML = '<span class="tag-err">❌ Nombre y edición son requeridos</span>'; return; }
+    const res = await api('PATCH', `/tournament/${id}`, { name, edition: Number(edition), modalidad });
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    closeModal2('modal-edit-torneo');
+    loadTournamentList();
+  }
+
+  // ── Participantes por torneo ────────────────────────────────────
+  const openParticipantRows = new Set();
+
+  async function toggleParticipants(tid) {
+    const row = document.getElementById(`participants-row-${tid}`);
+    const box = document.getElementById(`participants-${tid}`);
+    if (openParticipantRows.has(tid)) {
+      row.style.display = 'none';
+      openParticipantRows.delete(tid);
+      return;
+    }
+    row.style.display = 'table-row';
+    openParticipantRows.add(tid);
+    box.innerHTML = '<p style="color:var(--muted);font-size:12px">Cargando...</p>';
+    const snaps = await api('GET', `/tournament/leaderboard/${tid}`);
+    if (!snaps || !snaps.length) { box.innerHTML = '<p style="color:var(--muted);font-size:12px">Sin participantes cargados.</p>'; return; }
+    const linked = snaps.filter(s => s.discord_id).length;
+    box.innerHTML = `
+      <p style="font-size:11px;color:var(--muted);margin-bottom:6px">${snaps.length} participantes · ${linked} vinculados · ${snaps.length - linked} sin vincular</p>
+      <div style="overflow-x:auto;max-height:280px;overflow-y:auto">
+      <table style="font-size:12px">
+        <thead><tr><th>#</th><th>Username / Alias</th><th>Correo</th><th style="text-align:right">PnL%</th><th>Discord</th></tr></thead>
+        <tbody>${snaps.map(s => {
+          const sign = s.current_pnl_pct >= 0 ? '+' : '';
+          const linked = s.discord_id
+            ? `<span style="color:var(--success);font-size:10px">✅ vinculado</span>`
+            : `<span style="color:var(--danger);font-size:10px">❌ sin vincular</span>`;
+          return `<tr>
+            <td style="color:var(--muted)">${s.current_rank}</td>
+            <td><strong>${s.username || '—'}</strong></td>
+            <td style="color:var(--muted)">${s.correo || '—'}</td>
+            <td style="text-align:right;color:${s.current_pnl_pct >= 0 ? 'var(--success)' : 'var(--danger)'}">${sign}${s.current_pnl_pct?.toFixed(2)}%</td>
+            <td>${linked}${s.discord_id ? `<br><span style="font-size:10px;color:var(--muted)">${s.discord_id}</span>` : ''}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      </div>`;
   }
 
   // Init

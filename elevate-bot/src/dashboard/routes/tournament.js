@@ -253,6 +253,19 @@ router.delete('/:id', (req, res) => {
   res.json({ message: `Torneo ${torneo.name} #${torneo.edition} eliminado` });
 });
 
+// PATCH /api/tournament/:id — edita nombre y/o edición de un torneo
+router.patch('/:id', (req, res) => {
+  const torneo = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(Number(req.params.id));
+  if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+  const name = (req.body.name || '').trim() || torneo.name;
+  const edition = parseInt(req.body.edition, 10) || torneo.edition;
+  const modalidad = req.body.modalidad || torneo.modalidad;
+
+  db.prepare('UPDATE tournaments SET name = ?, edition = ?, modalidad = ? WHERE id = ?').run(name, edition, modalidad, torneo.id);
+  res.json({ ok: true, id: torneo.id, name, edition, modalidad });
+});
+
 // GET /api/leaderboard/:tid
 router.get('/leaderboard/:tid', (req, res) => {
   const snapshots = db.prepare(`
