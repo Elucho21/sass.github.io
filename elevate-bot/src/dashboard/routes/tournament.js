@@ -229,6 +229,51 @@ router.post('/recalc-all', async (req, res) => {
   res.json({ message: `${resultados.length} torneos procesados, ${totalProcesados} traders con ELO calculado`, torneos: resultados });
 });
 
+// POST /api/tournament/force-recalc-all — reset completo: reinicia stats de todos los jugadores y recalcula desde cero
+router.post('/force-recalc-all', async (req, res) => {
+  const torneos = db.prepare(`
+    SELECT t.id, t.name, t.edition
+    FROM tournaments t
+    WHERE t.status = 'closed'
+      AND (SELECT COUNT(*) FROM leaderboard_snapshots WHERE tournament_id = t.id) > 0
+    ORDER BY t.id ASC
+  `).all();
+
+  if (!torneos.length) return res.json({ message: 'No hay torneos cerrados con datos para recalcular', torneos: [] });
+
+  // Reset completo: todos los jugadores vuelven a ELO 1200 inicial y stats a 0
+  // Esto garantiza que el recálculo en cadena sea correcto independientemente de errores previos
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE players SET
+        elo = 1200, level = 'Rookie', racha_actual = 0,
+        tournaments_played = 0, tournaments_won = 0,
+        top10_count = 0, ever_top10 = 0,
+        total_pnl_sum = 0, best_finish = NULL,
+        last_top10_date = NULL
+      WHERE discord_id IN (SELECT DISTINCT discord_id FROM results WHERE discord_id IS NOT NULL)
+    `).run();
+    db.prepare('DELETE FROM results').run();
+    db.prepare('DELETE FROM achievements').run();
+  })();
+
+  const resultados = [];
+  for (const t of torneos) {
+    try {
+      const r = await recalcMissingElo(t.id);
+      resultados.push({ id: t.id, torneo: `${t.name} #${t.edition}`, ...r });
+    } catch (err) {
+      resultados.push({ id: t.id, torneo: `${t.name} #${t.edition}`, error: err.message });
+    }
+  }
+
+  const totalProcesados = resultados.reduce((s, r) => s + (r.procesados || 0), 0);
+  res.json({
+    message: `Reset completo. ${resultados.length} torneos recalculados, ${totalProcesados} traders procesados en total`,
+    torneos: resultados,
+  });
+});
+
 // POST /api/tournament/:id/recalc-elo — recalcula ELO para un torneo específico
 router.post('/:id/recalc-elo', async (req, res) => {
   try {
@@ -250,16 +295,17 @@ router.post('/:id/force-recalc', async (req, res) => {
 
   db.transaction(() => {
     for (const r of existingResults) {
+      // Usar elo - elo_change en lugar de restaurar elo_before, para que sea correcto
+      // si ya se recalcularon torneos posteriores (elo_before almacenado puede estar desactualizado)
       db.prepare(`
         UPDATE players SET
-          elo            = ?,
-          racha_actual   = ?,
+          elo                = MAX(0, elo - ?),
           tournaments_played = MAX(0, tournaments_played - 1),
           tournaments_won    = MAX(0, tournaments_won - CASE WHEN ? = 1 THEN 1 ELSE 0 END),
           top10_count        = MAX(0, top10_count - CASE WHEN ? <= 10 THEN 1 ELSE 0 END),
           total_pnl_sum      = total_pnl_sum - ?
         WHERE discord_id = ?
-      `).run(r.elo_before, r.racha_antes, r.rank_final, r.rank_final, r.pnl_pct, r.discord_id);
+      `).run(r.elo_change, r.rank_final, r.rank_final, r.pnl_pct, r.discord_id);
     }
     // Borrar resultados y logros del torneo
     db.prepare('DELETE FROM results WHERE tournament_id = ?').run(torneoId);

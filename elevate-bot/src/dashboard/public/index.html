@@ -194,7 +194,8 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
         <h3 style="margin:0">Historial de torneos</h3>
         <div style="display:flex;gap:6px;align-items:center">
-          <button id="btn-recalc-all" onclick="recalcAll()" style="background:#7C3AED;padding:4px 12px;font-size:12px;border:none;border-radius:4px;color:#fff;cursor:pointer">🔄 Recalcular todos</button>
+          <button id="btn-recalc-all" onclick="recalcAll()" style="background:#7C3AED;padding:4px 12px;font-size:12px;border:none;border-radius:4px;color:#fff;cursor:pointer">🔄 Recalcular faltantes</button>
+          <button id="btn-force-recalc-all" onclick="forceRecalcAll()" title="Revierte y recalcula TODOS los torneos desde cero (cronológico)" style="background:#B45309;padding:4px 12px;font-size:12px;border:none;border-radius:4px;color:#fff;cursor:pointer">⚡ Recalcular todos</button>
           <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="loadTournamentList()">↻ Actualizar</button>
         </div>
       </div>
@@ -604,16 +605,33 @@
   async function recalcAll() {
     const btn = document.getElementById('btn-recalc-all');
     const msg = document.getElementById('recalc-all-msg');
-    if (!confirm('Recalcular ELO en todos los torneos sin resultados (en orden cronológico)?\n\nEsto puede tardar algunos segundos.')) return;
-    btn.disabled = true; btn.textContent = '⏳ Recalculando...';
+    if (!confirm('Recalcular ELO en todos los torneos sin resultados (en orden cronológico)?\n\nSolo procesa torneos que aún no tienen resultados calculados.')) return;
+    btn.disabled = true; btn.textContent = '⏳ Calculando...';
     msg.innerHTML = '';
     const res = await api('POST', '/tournament/recalc-all');
-    btn.disabled = false; btn.textContent = '🔄 Recalcular todos';
+    btn.disabled = false; btn.textContent = '🔄 Recalcular faltantes';
     if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
     const lineas = (res.torneos || []).map(t =>
       t.error ? `❌ ${t.torneo}: ${t.error}` : `✅ ${t.torneo}: ${t.procesados} traders`
     ).join(' | ');
     msg.innerHTML = `<span class="tag-ok">${res.message}</span>${lineas ? ` — ${lineas}` : ''}`;
+    loadTournamentList();
+  }
+
+  async function forceRecalcAll() {
+    const btn = document.getElementById('btn-force-recalc-all');
+    const msg = document.getElementById('recalc-all-msg');
+    if (!confirm('⚡ RECALCULAR TODOS LOS TORNEOS\n\nEsto revertirá y recalculará el ELO de TODOS los torneos cerrados en orden cronológico.\n\nÚsalo si el ELO histórico tiene errores (ej: todos los cambios fueron +0).\n\n¿Continuar?')) return;
+    btn.disabled = true; btn.textContent = '⏳ Recalculando todo...';
+    msg.innerHTML = '<span style="color:#F59E0B">⚡ Procesando todos los torneos, esto puede tardar...</span>';
+    const res = await api('POST', '/tournament/force-recalc-all');
+    btn.disabled = false; btn.textContent = '⚡ Recalcular todos';
+    if (res.error) { msg.innerHTML = `<span class="tag-err">❌ ${res.error}</span>`; return; }
+    const errores = (res.torneos || []).filter(t => t.error);
+    const lineas = (res.torneos || []).map(t =>
+      t.error ? `❌ ${t.torneo}: ${t.error}` : `✅ ${t.torneo}: ${t.procesados} traders`
+    ).join(' | ');
+    msg.innerHTML = `<span class="${errores.length ? 'tag-err' : 'tag-ok'}">${res.message}</span>${lineas ? `<br><small>${lineas}</small>` : ''}`;
     loadTournamentList();
   }
 
