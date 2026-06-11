@@ -232,6 +232,15 @@
   </div>
 </main>
 
+<!-- Modal detalle trader -->
+<div class="modal-bg" id="modal-trader-detail" onclick="closeModal(event,'modal-trader-detail')">
+  <div class="modal" style="max-width:680px;width:95%" onclick="event.stopPropagation()">
+    <h3 id="trader-detail-title">Historial del trader</h3>
+    <div id="trader-detail-body"><p style="color:var(--muted)">Cargando...</p></div>
+    <div class="modal-actions"><button class="secondary" onclick="closeModal2('modal-trader-detail')">Cerrar</button></div>
+  </div>
+</div>
+
 <!-- Modal editar torneo -->
 <div class="modal-bg" id="modal-edit-torneo" onclick="closeModal(event,'modal-edit-torneo')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -645,7 +654,7 @@
           <th style="text-align:right">ELO</th><th style="text-align:right">Torneos</th>
           <th style="text-align:right">Mejor pos.</th><th style="text-align:right">Top10</th>
         </tr></thead>
-        <tbody>${players.map(p => `<tr>
+        <tbody>${players.map(p => `<tr onclick="openTraderDetail('${p.discord_id}')" style="cursor:pointer" title="Ver detalle por torneo">
           <td title="${p.level}">${levelEmoji[p.level] || '🟤'} ${p.level}</td>
           <td><strong>${p.display_name || p.username}</strong></td>
           <td style="font-size:11px;color:var(--muted)">${p.correos || '—'}</td>
@@ -666,6 +675,61 @@
       (p.correos || '').toLowerCase().includes(lower)
     );
     renderLinkedPlayers(filtered);
+  }
+
+  // ── Detalle de trader ──────────────────────────────────────────
+  async function openTraderDetail(discordId) {
+    document.getElementById('trader-detail-title').textContent = 'Cargando...';
+    document.getElementById('trader-detail-body').innerHTML = '<p style="color:var(--muted)">Cargando...</p>';
+    document.getElementById('modal-trader-detail').style.display = 'flex';
+
+    const p = await api('GET', `/player/${discordId}`);
+    if (p.error) { document.getElementById('trader-detail-body').innerHTML = `<p style="color:var(--danger)">${p.error}</p>`; return; }
+
+    const levelEmoji = { Rookie:'🟤', Trader:'🟢', Pro:'🔵', Elite:'🟣', Master:'🟡', Legend:'🔴' };
+    const nombre = p.display_name || p.username;
+    document.getElementById('trader-detail-title').textContent = `${levelEmoji[p.level]||'🟤'} ${nombre} — ELO ${p.elo} (${p.level})`;
+
+    const correos = (p.emails||[]).map(e=>e.correo).join(', ') || '—';
+    const medals = {1:'🥇',2:'🥈',3:'🥉'};
+    const posEmoji = r => medals[r] || (r<=10?'🏅':'📊');
+
+    const resultRows = (p.results||[]).length ? `
+      <div style="overflow-x:auto;max-height:380px;overflow-y:auto;margin-top:10px">
+      <table style="font-size:12px">
+        <thead><tr>
+          <th>#</th><th>Torneo</th><th>Modalidad</th>
+          <th style="text-align:right">PnL%</th>
+          <th style="text-align:right">ELO antes</th>
+          <th style="text-align:right">ELO después</th>
+          <th style="text-align:right">Cambio</th>
+        </tr></thead>
+        <tbody>${p.results.map(r => {
+          const sign = r.pnl_pct >= 0 ? '+' : '';
+          const eloSign = r.elo_change >= 0 ? '+' : '';
+          const eloColor = r.elo_change > 0 ? 'var(--success)' : r.elo_change < 0 ? 'var(--danger)' : 'var(--muted)';
+          const pnlColor = r.pnl_pct >= 0 ? 'var(--success)' : 'var(--danger)';
+          return `<tr>
+            <td>${posEmoji(r.rank_final)} <strong>#${r.rank_final}</strong></td>
+            <td>${r.torneo_name} #${r.edition}</td>
+            <td style="color:var(--muted)">${r.modalidad}</td>
+            <td style="text-align:right;color:${pnlColor}">${sign}${r.pnl_pct?.toFixed(2)}%</td>
+            <td style="text-align:right;color:var(--muted)">${r.elo_before}</td>
+            <td style="text-align:right"><strong>${r.elo_after}</strong></td>
+            <td style="text-align:right;color:${eloColor};font-weight:bold">${eloSign}${r.elo_change}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      </div>` : '<p style="color:var(--muted);font-size:12px;margin-top:8px">Sin torneos cerrados registrados.</p>';
+
+    document.getElementById('trader-detail-body').innerHTML = `
+      <p style="font-size:12px;color:var(--muted);margin-bottom:4px">
+        Correo(s): <strong>${correos}</strong> · Discord: <code style="font-size:11px">${discordId}</code>
+      </p>
+      <p style="font-size:12px;color:var(--muted)">
+        Torneos: ${p.tournaments_played} · Ganados: ${p.tournaments_won} · Mejor pos: ${p.best_finish ? '#'+p.best_finish : '—'} · Top10: ${p.top10_count} · Racha: ${p.racha_actual}
+      </p>
+      ${resultRows}`;
   }
 
   // ── Editar torneo ──────────────────────────────────────────────

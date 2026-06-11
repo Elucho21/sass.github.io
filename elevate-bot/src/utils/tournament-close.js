@@ -36,7 +36,11 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
     .filter(s => playersMap[s.discord_id])
     .map(s => playersMap[s.discord_id]);
 
-  const totalPlayers = allLinkedPlayers.length;
+  // Usar el total real de participantes para que el actualScore sea correcto
+  // aunque no todos estén vinculados. allLinkedPlayers se usa solo para expectedScore.
+  const totalPlayers = torneo.total_participants
+    || db.prepare('SELECT COUNT(*) as c FROM leaderboard_snapshots WHERE tournament_id = ?').get(torneoId).c
+    || allLinkedPlayers.length;
 
   let procesados = 0;
   const top3 = [];
@@ -278,7 +282,11 @@ async function recalcMissingElo(torneoId) {
   const allLinkedPlayers = linkedSnaps
     .filter(s => playersMap[s.discord_id])
     .map(s => playersMap[s.discord_id]);
-  const totalPlayers = allLinkedPlayers.length;
+
+  // Total real de participantes (rank del snapshot va de 1 a N total, no solo vinculados)
+  const totalPlayers = torneo.total_participants
+    || db.prepare('SELECT COUNT(*) as c FROM leaderboard_snapshots WHERE tournament_id = ?').get(torneoId).c
+    || allLinkedPlayers.length;
 
   let procesados = 0;
 
