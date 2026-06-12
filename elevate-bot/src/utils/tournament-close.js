@@ -183,7 +183,7 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
     }
   }
 
-  return { procesados, top3, ascensos: ascensos.length, logros: logros.length };
+  return { procesados, top3, ascensos, ascensos_count: ascensos.length, logros, logros_count: logros.length };
 }
 
 function assignLevelRole(guild, discordId, level) {

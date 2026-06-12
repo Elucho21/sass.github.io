@@ -91,6 +91,17 @@ CREATE TABLE IF NOT EXISTS achievements (
   FOREIGN KEY (discord_id) REFERENCES players(discord_id)
 );
 
+-- Votos de predicción por torneo
+CREATE TABLE IF NOT EXISTS tournament_votes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  voter_discord_id TEXT NOT NULL,
+  voted_for_discord_id TEXT NOT NULL,
+  voted_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(tournament_id, voter_discord_id),
+  FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+);
+
 -- Config del servidor
 CREATE TABLE IF NOT EXISTS server_config (
   key TEXT PRIMARY KEY,

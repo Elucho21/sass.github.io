@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const db = require('../../../database/db');
 const { generateLeaderboardText, formatLastUpdated } = require('../../../utils/leaderboard');
 
@@ -32,6 +32,29 @@ module.exports = {
       torneo.total_participants,
     );
 
-    return interaction.reply({ content: text, ephemeral: true });
+    // Resumen de predicciones (top 3 más votados)
+    const votoTop = db.prepare(`
+      SELECT ls.username, COUNT(*) as votos
+      FROM tournament_votes v
+      JOIN leaderboard_snapshots ls
+        ON ls.discord_id = v.voted_for_discord_id AND ls.tournament_id = v.tournament_id
+      WHERE v.tournament_id = ?
+      GROUP BY v.voted_for_discord_id
+      ORDER BY votos DESC
+      LIMIT 3
+    `).all(torneo.id);
+
+    const votoLine = votoTop.length
+      ? `\n📊 Predicciones: ${votoTop.map((v, i) => `${i + 1}. ${v.username} (${v.votos})`).join(' · ')}`
+      : '';
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`votar_abrir_${torneo.id}`)
+        .setLabel('🗳️ Votar por el ganador')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return interaction.reply({ content: text + votoLine, components: [row], ephemeral: true });
   },
 };

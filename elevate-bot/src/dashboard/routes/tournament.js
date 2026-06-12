@@ -5,6 +5,7 @@ const { generateLeaderboardText, formatLastUpdated } = require('../../utils/lead
 const { parseCsv, normalizeRows } = require('../../utils/csv');
 const { getLevelEmoji } = require('../../utils/elo');
 const { closeTournamentWithElo, recalcMissingElo } = require('../../utils/tournament-close');
+const { buildAscensoEmbed, buildLogroEmbed } = require('../../utils/embeds');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -100,7 +101,12 @@ router.post('/close', async (req, res) => {
 
   try {
     const result = await closeTournamentWithElo(torneo.id, null);
-    res.json({ message: `Torneo cerrado. ELO calculado para ${result.procesados} traders.`, ...result });
+    res.json({
+      message: `Torneo cerrado. ELO calculado para ${result.procesados} traders.`,
+      procesados: result.procesados,
+      ascensos: result.ascensos_count,
+      logros: result.logros_count,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -192,11 +198,41 @@ router.post('/upload-and-close', upload.single('file'), async (req, res) => {
   // Calcular ELO y cerrar
   try {
     const result = await closeTournamentWithElo(torneo.id, null);
+
+    // Enviar notificaciones Discord (solo logros y ascensos, no resultados finales)
+    const discordClient = req.app.locals.discordClient;
+    if (discordClient?.isReady() && (result.ascensos_count || result.logros_count)) {
+      const torneoNombre = `${torneo.name} #${torneo.edition}`;
+      const canalCfg = db.prepare("SELECT value FROM server_config WHERE key = 'canal_ascensos'").get();
+      const canalId = canalCfg?.value || process.env.CHANNEL_ASCENSOS_LOGROS;
+      if (canalId) {
+        discordClient.channels.fetch(canalId).then(async ch => {
+          for (const { player, eloResult, finalEloAfter } of result.ascensos) {
+            ch.send({ embeds: [buildAscensoEmbed(
+              player.display_name || player.username,
+              eloResult.level_before, eloResult.level_after,
+              eloResult.elo_before, finalEloAfter, torneoNombre,
+            )] }).catch(() => {});
+          }
+          for (const { player, newAchievements, finalEloAfter } of result.logros) {
+            for (const logro of newAchievements) {
+              ch.send({ embeds: [buildLogroEmbed(
+                player.display_name || player.username,
+                logro, finalEloAfter, torneoNombre,
+              )] }).catch(() => {});
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+
     res.json({
       torneoId: torneo.id,
       torneo: `${torneo.name} #${torneo.edition}`,
       message: `Torneo procesado. ELO calculado para ${result.procesados} traders.`,
-      ...result,
+      procesados: result.procesados,
+      ascensos: result.ascensos_count,
+      logros: result.logros_count,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
