@@ -767,7 +767,7 @@
     document.getElementById('edit-torneo-edicion').value = edition;
     document.getElementById('edit-torneo-modalidad').value = modalidad;
     document.getElementById('edit-torneo-msg').innerHTML = '';
-    document.getElementById('modal-edit-torneo').style.display = 'flex';
+    openModal('modal-edit-torneo');
   }
 
   async function guardarEditTorneo() {
