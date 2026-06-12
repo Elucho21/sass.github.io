@@ -709,7 +709,7 @@
   async function openTraderDetail(discordId) {
     document.getElementById('trader-detail-title').textContent = 'Cargando...';
     document.getElementById('trader-detail-body').innerHTML = '<p style="color:var(--muted)">Cargando...</p>';
-    document.getElementById('modal-trader-detail').style.display = 'flex';
+    openModal('modal-trader-detail');
 
     const p = await api('GET', `/player/${discordId}`);
     if (p.error) { document.getElementById('trader-detail-body').innerHTML = `<p style="color:var(--danger)">${p.error}</p>`; return; }
