@@ -1,7 +1,7 @@
 const db = require('../database/db');
 const { processTournamentElo, getLevelEmoji } = require('./elo');
 const { checkAchievements } = require('./achievements');
-const { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed } = require('./embeds');
+const { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed, buildRachaCalienteEmbed } = require('./embeds');
 
 /**
  * Calcula ELO, cierra el torneo y (opcionalmente) envía embeds a Discord.
@@ -46,6 +46,7 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
   const top3 = [];
   const ascensos = [];
   const logros = [];
+  const rachasCalientes = [];
 
   const processAll = db.transaction(() => {
     for (const snap of snapshots) {
@@ -123,6 +124,9 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
       if (newAchievements.length) {
         logros.push({ player, newAchievements, finalEloAfter });
       }
+      if (snap.current_rank <= 10 && eloResult.racha_despues >= 3) {
+        rachasCalientes.push({ player, eloResult, finalEloAfter, rank: snap.current_rank });
+      }
 
       procesados++;
     }
@@ -162,6 +166,14 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
           const roleId = process.env[logro.roleEnv];
           if (roleId) guild.members.fetch(player.discord_id).then(m => m.roles.add(roleId)).catch(() => {});
         }
+      }
+      for (const { player, eloResult, finalEloAfter, rank } of rachasCalientes) {
+        ascensosChannel.send({ embeds: [buildRachaCalienteEmbed(
+          player.display_name || player.username,
+          eloResult.racha_despues,
+          eloResult.elo_before, finalEloAfter,
+          torneoName, rank,
+        )] }).catch(() => {});
       }
     }
 

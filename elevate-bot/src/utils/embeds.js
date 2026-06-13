@@ -92,4 +92,19 @@ function buildStatsEmbed(player, recentAchievements, lastTournaments) {
     .setTimestamp();
 }
 
-module.exports = { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed, buildStatsEmbed };
+function buildRachaCalienteEmbed(username, racha, eloBefore, eloAfter, torneoName, rank) {
+  const eloChange = eloAfter - eloBefore;
+  const changeStr = eloChange >= 0 ? `+${eloChange}` : `${eloChange}`;
+  return new EmbedBuilder()
+    .setColor(0xFF4500)
+    .setTitle('🔥 ¡Racha Caliente!')
+    .setDescription(`**${username}** lleva **${racha}** torneos consecutivos en Top 10`)
+    .addFields(
+      { name: 'Posición',  value: `#${rank}`,                                 inline: true },
+      { name: 'ELO',       value: `${eloBefore} → ${eloAfter} (${changeStr})`, inline: true },
+      { name: 'Torneo',    value: torneoName,                                   inline: true },
+    )
+    .setTimestamp();
+}
+
+module.exports = { buildAscensoEmbed, buildLogroEmbed, buildResultadosFinalesEmbed, buildStatsEmbed, buildRachaCalienteEmbed };

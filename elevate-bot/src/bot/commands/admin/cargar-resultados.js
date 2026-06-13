@@ -58,6 +58,12 @@ module.exports = {
     const sinVincular = [];
     let actualizados = 0;
 
+    // Snapshot del top 3 antes de procesar para detectar novedades
+    const prevTop3 = db.prepare(`
+      SELECT discord_id, username, current_rank FROM leaderboard_snapshots
+      WHERE tournament_id = ? AND current_rank <= 3 ORDER BY current_rank ASC
+    `).all(torneo.id);
+
     // Guardar correos sin vincular como referencia para /sin-vincular
     db.prepare("DELETE FROM server_config WHERE key = 'last_csv_unlinked'").run();
 
@@ -133,6 +139,48 @@ module.exports = {
     // Guardar lista de sin vincular
     if (sinVincular.length) {
       db.prepare("INSERT OR REPLACE INTO server_config (key, value) VALUES ('last_csv_unlinked', ?)").run(JSON.stringify(sinVincular));
+    }
+
+    // Detectar y postear novedades al canal de ascensos
+    if (torneo.status === 'active') {
+      const canalAscensos = db.prepare("SELECT value FROM server_config WHERE key = 'canal_ascensos'").get()?.value
+        || process.env.CHANNEL_ASCENSOS_LOGROS;
+      if (canalAscensos) {
+        try {
+          const ch = await interaction.client.channels.fetch(canalAscensos);
+          const newTop3 = db.prepare(`
+            SELECT discord_id, username, current_rank, current_pnl_pct FROM leaderboard_snapshots
+            WHERE tournament_id = ? AND current_rank <= 3 ORDER BY current_rank ASC
+          `).all(torneo.id);
+
+          // Nuevo líder
+          const prevLeader = prevTop3.find(s => s.current_rank === 1);
+          const newLeader = newTop3.find(s => s.current_rank === 1);
+          if (newLeader && prevLeader && newLeader.discord_id !== prevLeader.discord_id) {
+            const sign = newLeader.current_pnl_pct >= 0 ? '+' : '';
+            ch.send({ content: `📢 ¡Cambio de líder! **${newLeader.username}** pasa al #1 con ${sign}${newLeader.current_pnl_pct?.toFixed(2) ?? '?'}%` }).catch(() => {});
+          }
+
+          // Nuevas entradas al podio (top 3)
+          const prevIds = new Set(prevTop3.map(s => s.discord_id).filter(Boolean));
+          for (const snap of newTop3) {
+            if (snap.discord_id && !prevIds.has(snap.discord_id) && snap.current_rank !== 1) {
+              const medals = { 2: '🥈', 3: '🥉' };
+              const medal = medals[snap.current_rank] || '🏅';
+              ch.send({ content: `${medal} **${snap.username}** entra al podio en posición #${snap.current_rank}` }).catch(() => {});
+            }
+          }
+
+          // Saltos espectaculares (10+ posiciones de golpe)
+          const bigJumps = db.prepare(`
+            SELECT username, current_rank, pos_change FROM leaderboard_snapshots
+            WHERE tournament_id = ? AND pos_change >= 10 ORDER BY pos_change DESC
+          `).all(torneo.id);
+          for (const snap of bigJumps) {
+            ch.send({ content: `⚡ **${snap.username}** sube ${snap.pos_change} posiciones al #${snap.current_rank}` }).catch(() => {});
+          }
+        } catch (e) { /* canal no disponible */ }
+      }
     }
 
     // Editar mensaje pinneado
