@@ -134,6 +134,34 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
 
   processAll();
 
+  // Determinar ganador para payouts post-transacción
+  const winnerSnap = snapshots.find(s => s.current_rank === 1 && s.discord_id);
+
+  // Payout apuestas ELO
+  if (winnerSnap) {
+    try {
+      const pendingBets = db.prepare("SELECT * FROM elo_bets WHERE tournament_id = ? AND status = 'pending'").all(torneoId);
+      if (pendingBets.length > 0) {
+        const updateBet = db.prepare("UPDATE elo_bets SET status = ?, elo_result = ?, resolved_at = datetime('now') WHERE id = ?");
+        for (const bet of pendingBets) {
+          const won = bet.target_discord_id === winnerSnap.discord_id;
+          const eloChange = won ? bet.elo_amount : -bet.elo_amount;
+          db.prepare('UPDATE players SET elo = MAX(100, elo + ?) WHERE discord_id = ?').run(eloChange, bet.bettor_discord_id);
+          updateBet.run(won ? 'won' : 'lost', eloChange, bet.id);
+        }
+      }
+    } catch (e) { /* elo_bets table may not exist in older instances */ }
+
+    // +15 ELO bonus a votantes que acertaron al ganador
+    const correctVoters = db.prepare(`
+      SELECT voter_discord_id FROM tournament_votes
+      WHERE tournament_id = ? AND voted_for_discord_id = ?
+    `).all(torneoId, winnerSnap.discord_id);
+    for (const { voter_discord_id } of correctVoters) {
+      db.prepare('UPDATE players SET elo = elo + 15 WHERE discord_id = ?').run(voter_discord_id);
+    }
+  }
+
   db.prepare("UPDATE tournaments SET status = 'closed', end_date = datetime('now') WHERE id = ?").run(torneoId);
 
   // Acciones Discord opcionales
@@ -160,9 +188,10 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
       }
       for (const { player, newAchievements: achList, finalEloAfter } of logros) {
         for (const logro of achList) {
-          ascensosChannel.send({ embeds: [buildLogroEmbed(
-            player.display_name || player.username, logro, finalEloAfter, torneoName,
-          )] }).catch(() => {});
+          ascensosChannel.send({
+            content: `🎉 <@${player.discord_id}> desbloqueó **${logro.nombre}**!`,
+            embeds: [buildLogroEmbed(player.display_name || player.username, logro, finalEloAfter, torneoName)],
+          }).catch(() => {});
           const roleId = process.env[logro.roleEnv];
           if (roleId) guild.members.fetch(player.discord_id).then(m => m.roles.add(roleId)).catch(() => {});
         }
@@ -174,6 +203,13 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
           eloResult.elo_before, finalEloAfter,
           torneoName, rank,
         )] }).catch(() => {});
+      }
+
+      // Roles dinámicos de racha (ROLE_RACHA_3, ROLE_RACHA_5, ROLE_RACHA_10)
+      for (const snap of snapshots) {
+        if (!snap.discord_id) continue;
+        const updated = db.prepare('SELECT racha_actual FROM players WHERE discord_id = ?').get(snap.discord_id);
+        if (updated) assignRachaRole(guild, snap.discord_id, updated.racha_actual);
       }
     }
 
@@ -193,6 +229,36 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
         )] });
       } catch (e) { /* canal no configurado */ }
     }
+
+    // DM al cierre para jugadores con notificaciones activadas
+    try {
+      const { EmbedBuilder } = require('discord.js');
+      const dmPrefs = db.prepare('SELECT discord_id FROM dm_preferences WHERE notify_on = 1').all();
+      if (dmPrefs.length > 0) {
+        const dmSet = new Set(dmPrefs.map(p => p.discord_id));
+        for (const snap of snapshots) {
+          if (!snap.discord_id || !dmSet.has(snap.discord_id)) continue;
+          const result = db.prepare('SELECT * FROM results WHERE tournament_id = ? AND discord_id = ?').get(torneoId, snap.discord_id);
+          if (!result) continue;
+          const pnlStr = `${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(2)}%`;
+          const eloChange = result.elo_after - result.elo_before;
+          const eloStr = `${eloChange >= 0 ? '+' : ''}${eloChange}`;
+          const dmEmbed = new EmbedBuilder()
+            .setColor(eloChange >= 0 ? 0x22C55E : 0xEF4444)
+            .setTitle(`📊 Resumen: ${torneoName}`)
+            .addFields(
+              { name: 'Posición final', value: `#${result.rank_final}`, inline: true },
+              { name: 'PnL', value: pnlStr, inline: true },
+              { name: 'ELO', value: `${result.elo_before} → ${result.elo_after} (${eloStr})`, inline: true },
+            )
+            .setTimestamp()
+            .setFooter({ text: 'Usa /notificarme off para desactivar esto' });
+          client.users.fetch(snap.discord_id)
+            .then(user => user.send({ embeds: [dmEmbed] }))
+            .catch(() => {});
+        }
+      }
+    } catch (e) { /* dm_preferences may not exist yet */ }
   }
 
   return { procesados, top3, ascensos, ascensos_count: ascensos.length, logros, logros_count: logros.length };
@@ -211,6 +277,22 @@ function assignLevelRole(guild, discordId, level) {
     const toRemove = member.roles.cache.filter(r => allRoleIds.includes(r.id) && r.id !== newRoleId);
     for (const [, role] of toRemove) member.roles.remove(role).catch(() => {});
     member.roles.add(newRoleId).catch(() => {});
+  }).catch(() => {});
+}
+
+function assignRachaRole(guild, discordId, racha) {
+  const role3 = process.env.ROLE_RACHA_3;
+  const role5 = process.env.ROLE_RACHA_5;
+  const role10 = process.env.ROLE_RACHA_10;
+  const allRachaRoles = [role3, role5, role10].filter(Boolean);
+  if (!allRachaRoles.length) return;
+  guild.members.fetch(discordId).then(member => {
+    for (const r of allRachaRoles) {
+      if (member.roles.cache.has(r)) member.roles.remove(r).catch(() => {});
+    }
+    if (racha >= 10 && role10) member.roles.add(role10).catch(() => {});
+    else if (racha >= 5 && role5) member.roles.add(role5).catch(() => {});
+    else if (racha >= 3 && role3) member.roles.add(role3).catch(() => {});
   }).catch(() => {});
 }
 
