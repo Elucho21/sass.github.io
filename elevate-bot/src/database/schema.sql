@@ -130,3 +130,36 @@ CREATE TABLE IF NOT EXISTS dm_preferences (
   notify_on INTEGER DEFAULT 1,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Seasons (liga por temporadas)
+CREATE TABLE IF NOT EXISTS seasons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
+  started_at TEXT DEFAULT (datetime('now')),
+  ended_at TEXT
+);
+
+-- Rankings guardados al cerrar una season
+CREATE TABLE IF NOT EXISTS season_rankings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  season_id INTEGER NOT NULL,
+  discord_id TEXT NOT NULL,
+  rank_position INTEGER NOT NULL,
+  final_elo INTEGER NOT NULL,
+  final_level TEXT NOT NULL,
+  FOREIGN KEY (season_id) REFERENCES seasons(id),
+  FOREIGN KEY (discord_id) REFERENCES players(discord_id)
+);
+
+-- Desafíos semanales
+CREATE TABLE IF NOT EXISTS weekly_challenges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  description TEXT NOT NULL,
+  elo_reward INTEGER NOT NULL DEFAULT 50,
+  status TEXT DEFAULT 'active',
+  winner_discord_id TEXT,
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  closed_at TEXT
+);

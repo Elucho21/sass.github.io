@@ -1,10 +1,48 @@
 const fs = require('fs');
 const path = require('path');
 
+let lastChallengeReminderDate = null;
+
+async function postChallengeReminder(client) {
+  try {
+    const db = require('../database/db');
+    const challenge = db.prepare("SELECT * FROM weekly_challenges WHERE status = 'active' ORDER BY id DESC LIMIT 1").get();
+    if (!challenge) return;
+
+    const canalId = db.prepare("SELECT value FROM server_config WHERE key = 'canal_ascensos'").get()?.value
+      || process.env.CHANNEL_ASCENSOS_LOGROS;
+    if (!canalId || !client?.isReady()) return;
+
+    const { EmbedBuilder } = require('discord.js');
+    const ch = await client.channels.fetch(canalId);
+    await ch.send({
+      embeds: [new EmbedBuilder()
+        .setColor(0xF59E0B)
+        .setTitle('⚡ Recordatorio: Desafío de la Semana')
+        .setDescription(`**${challenge.description}**`)
+        .addFields({ name: '🎯 Premio', value: `+${challenge.elo_reward} ELO`, inline: true })
+        .setTimestamp()],
+    });
+    console.log('[Scheduler] Recordatorio de desafío publicado');
+  } catch (e) {
+    console.error('[Scheduler] Error al postear recordatorio de desafío:', e.message);
+  }
+}
+
 function startScheduler(client) {
-  // Heartbeat cada hora
-  setInterval(() => {
-    console.log(`[Scheduler] Heartbeat: ${new Date().toISOString()}`);
+  // Heartbeat cada hora + recordatorio de desafío los lunes
+  setInterval(async () => {
+    const now = new Date();
+    console.log(`[Scheduler] Heartbeat: ${now.toISOString()}`);
+
+    // Recordatorio de desafío activo: lunes a las 9 AM UTC
+    const isMonday = now.getUTCDay() === 1;
+    const isNineAM = now.getUTCHours() === 9;
+    const today = now.toISOString().split('T')[0];
+    if (isMonday && isNineAM && lastChallengeReminderDate !== today) {
+      lastChallengeReminderDate = today;
+      await postChallengeReminder(client);
+    }
   }, 60 * 60 * 1000);
 
   // Backup automático de la base de datos cada 24 horas
