@@ -1,3 +1,5 @@
+const commandCooldowns = new Map();
+
 module.exports = {
   name: 'interactionCreate',
   once: false,
@@ -5,6 +7,14 @@ module.exports = {
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
+
+      const now = Date.now();
+      const lastUsed = commandCooldowns.get(interaction.user.id) || 0;
+      if (now - lastUsed < 2000) {
+        return interaction.reply({ content: '⏳ Espera un momento antes de usar otro comando.', ephemeral: true }).catch(() => {});
+      }
+      commandCooldowns.set(interaction.user.id, now);
+
       try {
         await command.execute(interaction, client);
       } catch (err) {

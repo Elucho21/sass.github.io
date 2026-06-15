@@ -108,3 +108,58 @@ CREATE TABLE IF NOT EXISTS server_config (
   value TEXT NOT NULL,
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Sistema de apuestas con ELO
+CREATE TABLE IF NOT EXISTS elo_bets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  bettor_discord_id TEXT NOT NULL,
+  target_discord_id TEXT NOT NULL,
+  elo_amount INTEGER NOT NULL CHECK(elo_amount >= 10 AND elo_amount <= 100),
+  status TEXT NOT NULL DEFAULT 'pending',
+  elo_result INTEGER,
+  placed_at TEXT DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+  UNIQUE(tournament_id, bettor_discord_id)
+);
+
+-- Preferencias de notificación por DM
+CREATE TABLE IF NOT EXISTS dm_preferences (
+  discord_id TEXT PRIMARY KEY,
+  notify_on INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Seasons (liga por temporadas)
+CREATE TABLE IF NOT EXISTS seasons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
+  started_at TEXT DEFAULT (datetime('now')),
+  ended_at TEXT
+);
+
+-- Rankings guardados al cerrar una season
+CREATE TABLE IF NOT EXISTS season_rankings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  season_id INTEGER NOT NULL,
+  discord_id TEXT NOT NULL,
+  rank_position INTEGER NOT NULL,
+  final_elo INTEGER NOT NULL,
+  final_level TEXT NOT NULL,
+  FOREIGN KEY (season_id) REFERENCES seasons(id),
+  FOREIGN KEY (discord_id) REFERENCES players(discord_id)
+);
+
+-- Desafíos semanales
+CREATE TABLE IF NOT EXISTS weekly_challenges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  description TEXT NOT NULL,
+  elo_reward INTEGER NOT NULL DEFAULT 50,
+  status TEXT DEFAULT 'active',
+  winner_discord_id TEXT,
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  closed_at TEXT
+);
