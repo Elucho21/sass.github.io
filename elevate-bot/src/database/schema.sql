@@ -109,19 +109,18 @@ CREATE TABLE IF NOT EXISTS server_config (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- Sistema de apuestas con ELO
+-- Sistema de apuestas con ELO (hasta 3 apuestas por trader, 20 min entre apuestas)
 CREATE TABLE IF NOT EXISTS elo_bets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tournament_id INTEGER NOT NULL,
   bettor_discord_id TEXT NOT NULL,
   target_discord_id TEXT NOT NULL,
-  elo_amount INTEGER NOT NULL CHECK(elo_amount >= 10 AND elo_amount <= 100),
+  elo_amount INTEGER NOT NULL CHECK(elo_amount IN (10, 25, 50, 100)),
   status TEXT NOT NULL DEFAULT 'pending',
   elo_result INTEGER,
   placed_at TEXT DEFAULT (datetime('now')),
   resolved_at TEXT,
-  FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
-  UNIQUE(tournament_id, bettor_discord_id)
+  FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
 );
 
 -- Preferencias de notificación por DM

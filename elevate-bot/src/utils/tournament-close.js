@@ -145,7 +145,7 @@ async function closeTournamentWithElo(torneoId, discordContext = null) {
         const updateBet = db.prepare("UPDATE elo_bets SET status = ?, elo_result = ?, resolved_at = datetime('now') WHERE id = ?");
         for (const bet of pendingBets) {
           const won = bet.target_discord_id === winnerSnap.discord_id;
-          const eloChange = won ? bet.elo_amount : -bet.elo_amount;
+          const eloChange = won ? bet.elo_amount : -Math.ceil(bet.elo_amount / 2);
           db.prepare('UPDATE players SET elo = MAX(100, elo + ?) WHERE discord_id = ?').run(eloChange, bet.bettor_discord_id);
           updateBet.run(won ? 'won' : 'lost', eloChange, bet.id);
         }

@@ -26,13 +26,14 @@ module.exports = {
     let bets = [];
     try {
       bets = db.prepare(`
-        SELECT eb.*, t.name as torneo_name, t.edition,
+        SELECT eb.tournament_id, eb.target_discord_id, eb.elo_amount, eb.status, eb.elo_result, eb.placed_at,
+               t.name as torneo_name, t.edition, t.status as torneo_status,
                COALESCE(p.display_name, p.username) as target_name
         FROM elo_bets eb
         JOIN tournaments t ON t.id = eb.tournament_id
         LEFT JOIN players p ON p.discord_id = eb.target_discord_id
         WHERE eb.bettor_discord_id = ?
-        ORDER BY eb.placed_at DESC LIMIT 5
+        ORDER BY eb.placed_at DESC LIMIT 30
       `).all(discord_id);
     } catch (e) { /* elo_bets may not exist */ }
 
@@ -52,13 +53,35 @@ module.exports = {
         }).join('\n')
       : 'Sin votos registrados.';
 
-    const betsText = bets.length
-      ? bets.map(b => {
-          const torneo = `${b.torneo_name} #${b.edition}`;
-          if (b.status === 'pending') return `⏳ **${torneo}** — ${b.elo_amount} ELO en ${b.target_name}`;
-          return `${b.status === 'won' ? '✅' : '❌'} **${torneo}** — ${b.target_name} → ${b.status === 'won' ? `+${b.elo_amount}` : `-${b.elo_amount}`} ELO`;
-        }).join('\n')
-      : 'Sin apuestas registradas.';
+    // Agrupar apuestas por (torneo, target_discord_id)
+    let betsText = 'Sin apuestas registradas.';
+    if (bets.length) {
+      const groups = new Map();
+      for (const b of bets) {
+        const key = `${b.tournament_id}__${b.target_discord_id}`;
+        if (!groups.has(key)) {
+          groups.set(key, { torneo_name: b.torneo_name, edition: b.edition, torneo_status: b.torneo_status, target_name: b.target_name, items: [] });
+        }
+        groups.get(key).items.push(b);
+      }
+
+      const lines = [];
+      for (const [, g] of groups) {
+        const torneo = `${g.torneo_name} #${g.edition}`;
+        const totalStaked = g.items.reduce((s, b) => s + b.elo_amount, 0);
+        if (g.torneo_status !== 'closed') {
+          const detail = g.items.map(b => `${b.elo_amount} ELO`).join('+');
+          lines.push(`⏳ **${torneo}** — ${g.target_name} · ${detail} = ${totalStaked} ELO en juego`);
+        } else {
+          const totalResult = g.items.reduce((s, b) => s + (b.elo_result ?? 0), 0);
+          const won = g.items.some(b => b.status === 'won');
+          const icon = won ? '✅' : '❌';
+          const resultStr = totalResult >= 0 ? `+${totalResult}` : `${totalResult}`;
+          lines.push(`${icon} **${torneo}** — ${g.target_name} · ${totalStaked} ELO apostados → **${resultStr} ELO**`);
+        }
+      }
+      betsText = lines.join('\n');
+    }
 
     const embed = new EmbedBuilder()
       .setColor(0x8B5CF6)
